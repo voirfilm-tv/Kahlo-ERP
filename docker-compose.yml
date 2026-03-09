@@ -1,5 +1,3 @@
-version: "3.9"
-
 # ============================================================
 #  KAHLO CAFÉ — ERP Stack
 #  RAM cible : ~400MB en usage normal (sans Gemini API)
