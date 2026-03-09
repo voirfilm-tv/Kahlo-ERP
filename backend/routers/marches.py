@@ -9,6 +9,7 @@ from datetime import datetime
 from database import get_db
 from models import Marche, StatutMarche
 from services.calendrier import creer_evenement_caldav, creer_evenement_google
+from routers.auth import verifier_token
 
 router = APIRouter()
 
@@ -33,13 +34,13 @@ class BilanMarche(BaseModel):
 
 
 @router.get("/")
-async def get_marches(db: AsyncSession = Depends(get_db)):
+async def get_marches(db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     result = await db.execute(select(Marche).order_by(Marche.date.desc()))
     return result.scalars().all()
 
 
 @router.get("/a_venir")
-async def get_marches_a_venir(db: AsyncSession = Depends(get_db)):
+async def get_marches_a_venir(db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     result = await db.execute(
         select(Marche).where(
             Marche.date >= datetime.now(),
@@ -50,7 +51,7 @@ async def get_marches_a_venir(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/", status_code=201)
-async def creer_marche(data: MarcheCreate, db: AsyncSession = Depends(get_db)):
+async def creer_marche(data: MarcheCreate, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     marche = Marche(**data.model_dump())
     db.add(marche)
     await db.flush()
@@ -71,7 +72,7 @@ async def creer_marche(data: MarcheCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/{mid}/statut")
-async def changer_statut(mid: int, statut: StatutMarche, db: AsyncSession = Depends(get_db)):
+async def changer_statut(mid: int, statut: StatutMarche, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     result = await db.execute(select(Marche).where(Marche.id == mid))
     marche = result.scalar_one_or_none()
     if not marche:
@@ -82,7 +83,7 @@ async def changer_statut(mid: int, statut: StatutMarche, db: AsyncSession = Depe
 
 
 @router.post("/{mid}/bilan")
-async def saisir_bilan(mid: int, bilan: BilanMarche, db: AsyncSession = Depends(get_db)):
+async def saisir_bilan(mid: int, bilan: BilanMarche, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     result = await db.execute(select(Marche).where(Marche.id == mid))
     marche = result.scalar_one_or_none()
     if not marche:
@@ -101,7 +102,7 @@ async def saisir_bilan(mid: int, bilan: BilanMarche, db: AsyncSession = Depends(
 
 
 @router.get("/{mid}/analyse-ia")
-async def analyse_ia_marche(mid: int, db: AsyncSession = Depends(get_db)):
+async def analyse_ia_marche(mid: int, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     from services.ia import analyser_marche
     result = await db.execute(select(Marche).where(Marche.id == mid))
     marche = result.scalar_one_or_none()

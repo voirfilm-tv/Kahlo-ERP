@@ -21,8 +21,10 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    ports:
-      - "5432:5432"           # accès local uniquement
+    # Port non exposé sur l'hôte (accès uniquement via le réseau Docker)
+    # Décommenter pour debug local :
+    # ports:
+    #   - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kahlo"]
       interval: 5s
@@ -60,11 +62,11 @@ services:
   #  RAM : ~120MB
   # ----------------------------------------------------------
   backend:
-    image: python:3.11-slim
+    image: python:3.12-slim
     container_name: kahlo_backend
     restart: unless-stopped
     working_dir: /app
-    command: ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    command: ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       DATABASE_URL: postgresql://kahlo:${POSTGRES_PASSWORD}@db:5432/kahlo
       REDIS_URL: redis://redis:6379
@@ -77,6 +79,9 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       SECRET_KEY: ${SECRET_KEY}
+      APP_USERNAME: ${APP_USERNAME:-kahlo}
+      APP_PASSWORD_HASH: ${APP_PASSWORD_HASH:-}
+      SESSION_HOURS: ${SESSION_HOURS:-8}
       CALDAV_BASE_URL: http://caldav:5232
       PYTHONPATH: /host-packages
     depends_on:
@@ -98,7 +103,7 @@ services:
   #  RAM : ~30MB
   # ----------------------------------------------------------
   caldav:
-    image: tomsquest/docker-radicale:latest
+    image: tomsquest/docker-radicale:3.3
     container_name: kahlo_caldav
     restart: unless-stopped
     volumes:
@@ -131,7 +136,7 @@ services:
   #  RAM : ~10MB
   # ----------------------------------------------------------
   nginx:
-    image: nginx:alpine
+    image: nginx:1.27-alpine
     container_name: kahlo_nginx
     restart: unless-stopped
     ports:

@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 from datetime import datetime, timedelta
 from database import get_db
 from models import Commande, LigneCommande, Lot, Client, Marche, StatutCommande
+from routers.auth import verifier_token
 
 router = APIRouter()
 
@@ -16,7 +17,7 @@ router = APIRouter()
 # ────────────────────────────────────────────────
 
 @router.get("/dashboard")
-async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
+async def get_dashboard_stats(db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     now = datetime.now()
     debut_mois    = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     debut_semaine = now - timedelta(days=now.weekday())
@@ -62,7 +63,7 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
 # ────────────────────────────────────────────────
 
 @router.get("/ca-mensuel")
-async def get_ca_mensuel(mois: int = 7, db: AsyncSession = Depends(get_db)):
+async def get_ca_mensuel(mois: int = 7, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     r = await db.execute(
         select(
             extract("year",  Commande.date_commande).label("annee"),
@@ -88,7 +89,7 @@ async def get_ca_mensuel(mois: int = 7, db: AsyncSession = Depends(get_db)):
 # ────────────────────────────────────────────────
 
 @router.get("/general")
-async def get_analytics_general(mois: int = 12, db: AsyncSession = Depends(get_db)):
+async def get_analytics_general(mois: int = 12, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     depuis = datetime.now() - timedelta(days=mois * 30)
 
     # CA total + nb commandes
@@ -167,7 +168,7 @@ async def get_analytics_general(mois: int = 12, db: AsyncSession = Depends(get_d
 # ────────────────────────────────────────────────
 
 @router.get("/marches")
-async def get_analytics_marches(db: AsyncSession = Depends(get_db)):
+async def get_analytics_marches(db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     r = await db.execute(
         select(Marche)
         .where(Marche.ca_realise != None)
@@ -198,7 +199,7 @@ async def get_analytics_marches(db: AsyncSession = Depends(get_db)):
 # ────────────────────────────────────────────────
 
 @router.get("/origines")
-async def get_analytics_origines(db: AsyncSession = Depends(get_db)):
+async def get_analytics_origines(db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     r = await db.execute(
         select(
             Lot.origine,
@@ -234,7 +235,7 @@ async def get_analytics_origines(db: AsyncSession = Depends(get_db)):
 # ────────────────────────────────────────────────
 
 @router.get("/clients")
-async def get_analytics_clients(db: AsyncSession = Depends(get_db)):
+async def get_analytics_clients(db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     r = await db.execute(select(Client).options(selectinload(Client.commandes)))
     clients = r.scalars().all()
 

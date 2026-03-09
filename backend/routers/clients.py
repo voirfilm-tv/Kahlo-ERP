@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from database import get_db
 from models import Client, Commande, StatutCommande, ProfilKahlo, Mouture
 from services.brevo import sync_client_brevo
+from routers.auth import verifier_token
 
 router = APIRouter()
 
@@ -84,10 +85,11 @@ def _serialise_client(c: Client, inclure_commandes: bool = False) -> dict:
 
 @router.get("/")
 async def get_clients(
-    search: Optional[str] = Query(None),
+    search: Optional[str] = Query(None, max_length=100),
     vip: Optional[bool] = Query(None),
     profil: Optional[ProfilKahlo] = Query(None),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    token: str = Depends(verifier_token)
 ):
     query = (
         select(Client)
@@ -113,7 +115,7 @@ async def get_clients(
 
 
 @router.get("/alertes")
-async def get_alertes(db: AsyncSession = Depends(get_db)):
+async def get_alertes(db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     """
     Retourne :
     - clients dont l'anniversaire est dans les 14 prochains jours
@@ -166,7 +168,7 @@ async def get_alertes(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{client_id}")
-async def get_client(client_id: int, db: AsyncSession = Depends(get_db)):
+async def get_client(client_id: int, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     result = await db.execute(
         select(Client)
         .options(selectinload(Client.commandes))
@@ -179,7 +181,7 @@ async def get_client(client_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/", status_code=201)
-async def creer_client(data: ClientCreate, db: AsyncSession = Depends(get_db)):
+async def creer_client(data: ClientCreate, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     # Vérifier unicité email
     if data.email:
         existe = await db.execute(select(Client).where(Client.email == data.email))
@@ -205,7 +207,8 @@ async def creer_client(data: ClientCreate, db: AsyncSession = Depends(get_db)):
 async def modifier_client(
     client_id: int,
     data: ClientUpdate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    token: str = Depends(verifier_token)
 ):
     result = await db.execute(select(Client).where(Client.id == client_id))
     client = result.scalar_one_or_none()
@@ -227,7 +230,7 @@ async def modifier_client(
 
 
 @router.post("/{client_id}/tampon")
-async def ajouter_tampon(client_id: int, db: AsyncSession = Depends(get_db)):
+async def ajouter_tampon(client_id: int, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     result = await db.execute(select(Client).where(Client.id == client_id))
     client = result.scalar_one_or_none()
     if not client:
@@ -251,7 +254,7 @@ async def ajouter_tampon(client_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{client_id}/tampon/reset")
-async def reset_tampons(client_id: int, db: AsyncSession = Depends(get_db)):
+async def reset_tampons(client_id: int, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     """Remet les tampons à 0 après une récompense distribuée"""
     result = await db.execute(select(Client).where(Client.id == client_id))
     client = result.scalar_one_or_none()
@@ -264,7 +267,7 @@ async def reset_tampons(client_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/{client_id}", status_code=204)
-async def supprimer_client(client_id: int, db: AsyncSession = Depends(get_db)):
+async def supprimer_client(client_id: int, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     result = await db.execute(select(Client).where(Client.id == client_id))
     client = result.scalar_one_or_none()
     if not client:

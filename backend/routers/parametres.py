@@ -10,8 +10,12 @@ from pydantic import BaseModel
 from typing import Optional
 import os
 import re
+import logging
 from pathlib import Path
+from datetime import datetime
 from dotenv import dotenv_values, set_key
+
+logger = logging.getLogger(__name__)
 
 from routers.auth import verifier_token
 
@@ -445,7 +449,8 @@ async def sauvegarde_manuelle(token: str = Depends(verifier_token)):
     )
 
     if result.returncode != 0:
-        raise HTTPException(status_code=500, detail=f"pg_dump échoué : {result.stderr.decode()}")
+        logger.error(f"pg_dump echoue: {result.stderr.decode()}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la sauvegarde de la base de donnees")
 
     with open(fichier, "wb") as f:
         f.write(result.stdout)

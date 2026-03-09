@@ -41,7 +41,12 @@ async def sumup_webhook(
 ):
     payload = await request.body()
 
-    if SUMUP_WEBHOOK_SECRET and not _verifier_signature(payload, x_sumup_signature or ""):
+    # Bloquer si le secret webhook n'est pas configuré (évite le contournement)
+    if not SUMUP_WEBHOOK_SECRET:
+        logger.error("SUMUP_WEBHOOK_SECRET non configure — webhook rejete")
+        raise HTTPException(status_code=403, detail="Webhook non configure")
+
+    if not _verifier_signature(payload, x_sumup_signature or ""):
         raise HTTPException(status_code=400, detail="Signature invalide")
 
     event = await request.json()

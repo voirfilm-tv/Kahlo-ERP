@@ -12,6 +12,7 @@ from services.calendrier import (
     creer_evenement_caldav, sync_caldav_vers_db,
     creer_evenement_google, sync_google_vers_db
 )
+from routers.auth import verifier_token
 
 router = APIRouter()
 
@@ -32,7 +33,8 @@ class EvenementCreate(BaseModel):
 async def get_evenements(
     mois: Optional[int] = None,
     annee: Optional[int] = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    token: str = Depends(verifier_token)
 ):
     query = select(Evenement).order_by(Evenement.date_debut)
     if mois and annee:
@@ -46,7 +48,7 @@ async def get_evenements(
 
 
 @router.post("/", status_code=201)
-async def creer_evenement(data: EvenementCreate, db: AsyncSession = Depends(get_db)):
+async def creer_evenement(data: EvenementCreate, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     ev = Evenement(**data.model_dump())
     db.add(ev)
     await db.flush()
@@ -67,7 +69,7 @@ async def creer_evenement(data: EvenementCreate, db: AsyncSession = Depends(get_
 
 
 @router.delete("/{eid}")
-async def supprimer_evenement(eid: int, db: AsyncSession = Depends(get_db)):
+async def supprimer_evenement(eid: int, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     from services.calendrier import supprimer_evenement_caldav
     result = await db.execute(select(Evenement).where(Evenement.id == eid))
     ev = result.scalar_one_or_none()
@@ -83,14 +85,14 @@ async def supprimer_evenement(eid: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/sync/caldav")
-async def sync_caldav(db: AsyncSession = Depends(get_db)):
+async def sync_caldav(db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     """Force une sync bidirectionnelle CalDAV"""
     nouveaux = await sync_caldav_vers_db(db)
     return {"importes": len(nouveaux), "evenements": nouveaux}
 
 
 @router.post("/sync/google")
-async def sync_google(credentials: dict, db: AsyncSession = Depends(get_db)):
+async def sync_google(credentials: dict, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     """Force une sync Google Calendar (nécessite token OAuth)"""
     nouveaux = await sync_google_vers_db(credentials, db)
     return {"importes": len(nouveaux)}
