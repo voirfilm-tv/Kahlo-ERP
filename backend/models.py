@@ -35,6 +35,15 @@ class TypeEvenement(str, enum.Enum):
     fournisseur = "fournisseur"
     rappel = "rappel"
 
+class RoleUtilisateur(str, enum.Enum):
+    admin = "admin"
+    utilisateur = "utilisateur"
+
+class StatutDomaine(str, enum.Enum):
+    en_attente = "en_attente"
+    verifie = "verifie"
+    erreur = "erreur"
+
 class ProfilKahlo(str, enum.Enum):
     florale = "florale"
     intense = "intense"
@@ -47,6 +56,44 @@ class Mouture(str, enum.Enum):
     expresso = "Expresso"
     italienne = "Cafetière italienne"
     chemex = "Chemex"
+
+
+# ============================================================
+#  UTILISATEURS
+# ============================================================
+
+class Utilisateur(Base):
+    __tablename__ = "utilisateurs"
+
+    id          = Column(Integer, primary_key=True)
+    username    = Column(String(100), unique=True, nullable=False)
+    email       = Column(String(200), unique=True)
+    nom         = Column(String(200))
+    password_hash = Column(String(200), nullable=False)
+    role        = Column(Enum(RoleUtilisateur), default=RoleUtilisateur.utilisateur, nullable=False)
+    actif       = Column(Boolean, default=True)
+    created_at  = Column(DateTime, server_default=func.now())
+    updated_at  = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+# ============================================================
+#  DOMAINES
+# ============================================================
+
+class Domaine(Base):
+    __tablename__ = "domaines"
+
+    id          = Column(Integer, primary_key=True)
+    domaine     = Column(String(300), unique=True, nullable=False)
+    type        = Column(String(50), default="principal")  # principal, alias, redirect
+    ssl_actif   = Column(Boolean, default=False)
+    statut      = Column(Enum(StatutDomaine), default=StatutDomaine.en_attente)
+    dns_valeur_attendue = Column(String(500))  # IP ou CNAME attendu
+    dns_valeur_actuelle = Column(String(500))  # Dernière valeur DNS trouvée
+    derniere_verif = Column(DateTime)
+    notes       = Column(Text)
+    created_at  = Column(DateTime, server_default=func.now())
+    updated_at  = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
 # ============================================================

@@ -1,7 +1,12 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Layout from "../components/Layout";
-import { getParametres, sauvegarderParametres, testerConnexionSumUp, testerConnexionBrevo, testerConnexionGemini, sauvegarderMaintenant } from "../services/api";
+import { useAuthStore } from "../stores/auth";
+import {
+  getParametres, sauvegarderParametres, testerConnexionSumUp, testerConnexionBrevo, testerConnexionGemini, sauvegarderMaintenant,
+  changerMotDePasse, getUtilisateurs, creerUtilisateur, modifierUtilisateur, supprimerUtilisateur,
+  getDomaines, ajouterDomaine, verifierDomaine, modifierDomaine, supprimerDomaine,
+} from "../services/api";
 
 const C = {
   espresso: "#261810",
@@ -15,16 +20,18 @@ const C = {
   red: "#e8a0b8",
 };
 
-const SECTIONS = [
-  { id: "general",    icon: "◈", label: "Général" },
-  { id: "sumup",      icon: "💳", label: "SumUp" },
-  { id: "brevo",      icon: "✉", label: "Brevo / Email" },
-  { id: "calendrier", icon: "▦", label: "Calendrier" },
-  { id: "ia",         icon: "✦", label: "Gemini IA" },
-  { id: "stock",      icon: "◉", label: "Stock & Alertes" },
-  { id: "crm",        icon: "◎", label: "CRM & Fidélité" },
-  { id: "securite",   icon: "⬡", label: "Sécurité" },
-  { id: "sauvegarde", icon: "◧", label: "Sauvegarde" },
+const SECTIONS_BASE = [
+  { id: "general",      icon: "◈", label: "Général" },
+  { id: "sumup",        icon: "💳", label: "SumUp" },
+  { id: "brevo",        icon: "✉", label: "Brevo / Email" },
+  { id: "calendrier",   icon: "▦", label: "Calendrier" },
+  { id: "ia",           icon: "✦", label: "Gemini IA" },
+  { id: "stock",        icon: "◉", label: "Stock & Alertes" },
+  { id: "crm",          icon: "◎", label: "CRM & Fidélité" },
+  { id: "securite",     icon: "⬡", label: "Sécurité" },
+  { id: "utilisateurs", icon: "◩", label: "Utilisateurs", adminOnly: true },
+  { id: "domaines",     icon: "◆", label: "Domaines", adminOnly: true },
+  { id: "sauvegarde",   icon: "◧", label: "Sauvegarde" },
 ];
 
 // Composants réutilisables
@@ -441,20 +448,56 @@ function SectionCRM({ cfg, set }) {
 
 function SectionSecurite({ cfg, set }) {
   const [showKey, setShowKey] = useState(false);
+  const [pwdForm, setPwdForm] = useState({ ancien: "", nouveau: "", confirmer: "" });
+  const [pwdMsg, setPwdMsg] = useState(null);
+  const [pwdLoading, setPwdLoading] = useState(false);
+
+  const handleChangerMdp = async () => {
+    if (pwdForm.nouveau !== pwdForm.confirmer) {
+      setPwdMsg({ ok: false, text: "Les mots de passe ne correspondent pas" });
+      return;
+    }
+    if (pwdForm.nouveau.length < 6) {
+      setPwdMsg({ ok: false, text: "Minimum 6 caractères" });
+      return;
+    }
+    setPwdLoading(true);
+    setPwdMsg(null);
+    try {
+      await changerMotDePasse(pwdForm.ancien, pwdForm.nouveau, pwdForm.confirmer);
+      setPwdMsg({ ok: true, text: "Mot de passe modifié avec succès" });
+      setPwdForm({ ancien: "", nouveau: "", confirmer: "" });
+    } catch (e) {
+      setPwdMsg({ ok: false, text: e.response?.data?.detail || "Erreur lors du changement" });
+    }
+    setPwdLoading(false);
+  };
+
   return (
     <div>
-      <SectionTitle>Accès & Authentification</SectionTitle>
-      <Field label="Identifiant de connexion">
-        <Input value={cfg.username} onChange={v => set("username", v)} placeholder="kahlo" />
-      </Field>
-      <Field label="Nouveau mot de passe" hint="Laissez vide pour ne pas changer">
-        <Input value={cfg.new_password} onChange={v => set("new_password", v)} placeholder="••••••••" type="password" />
-      </Field>
-      <Field label="Confirmer le nouveau mot de passe">
-        <Input value={cfg.confirm_password} onChange={v => set("confirm_password", v)} placeholder="••••••••" type="password" />
-      </Field>
+      <SectionTitle>Changer mon mot de passe</SectionTitle>
+      <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 12, padding: 20, marginBottom: 24 }}>
+        <Field label="Mot de passe actuel">
+          <Input value={pwdForm.ancien} onChange={v => setPwdForm(p => ({ ...p, ancien: v }))} placeholder="Votre mot de passe actuel" type="password" />
+        </Field>
+        <Field label="Nouveau mot de passe" hint="Minimum 6 caractères">
+          <Input value={pwdForm.nouveau} onChange={v => setPwdForm(p => ({ ...p, nouveau: v }))} placeholder="Nouveau mot de passe" type="password" />
+        </Field>
+        <Field label="Confirmer le nouveau mot de passe">
+          <Input value={pwdForm.confirmer} onChange={v => setPwdForm(p => ({ ...p, confirmer: v }))} placeholder="Confirmer" type="password" />
+        </Field>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button onClick={handleChangerMdp} disabled={pwdLoading || !pwdForm.ancien || !pwdForm.nouveau} style={{ background: `linear-gradient(135deg, ${C.prune}, ${C.gold})`, border: "none", borderRadius: 10, padding: "10px 20px", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Outfit', sans-serif", opacity: pwdLoading ? 0.6 : 1 }}>
+            {pwdLoading ? "Modification..." : "Modifier le mot de passe"}
+          </button>
+          {pwdMsg && <span style={{ fontSize: 12, color: pwdMsg.ok ? C.green : C.red }}>{pwdMsg.ok ? "✓" : "✗"} {pwdMsg.text}</span>}
+        </div>
+      </div>
 
-      <SectionTitle>Clé secrète JWT</SectionTitle>
+      <SectionTitle>Sessions</SectionTitle>
+      <Toggle value={cfg.session_longue} onChange={v => set("session_longue", v)} label="Sessions longues (30 jours)" sub="Désactiver pour des sessions de 8h seulement" />
+
+      <SectionTitle style={{ marginTop: 28 }}>Clé secrète JWT</SectionTitle>
       <Field label="SECRET_KEY" hint="Utilisée pour signer les tokens de connexion. Regénérez si vous soupçonnez une compromission.">
         <div style={{ display: "flex", gap: 8 }}>
           <Input value={showKey ? cfg.secret_key : "••••••••••••••••••••••••••••••••"} onChange={v => set("secret_key", v)} monospace />
@@ -463,13 +506,395 @@ function SectionSecurite({ cfg, set }) {
           </button>
         </div>
       </Field>
-      <button style={{ background: "rgba(232,160,184,0.08)", border: `1px solid rgba(232,160,184,0.2)`, borderRadius: 10, padding: "10px 20px", color: C.red, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Outfit', sans-serif" }}>
-        ↺ Regénérer la clé (déconnecte tous les appareils)
-      </button>
+    </div>
+  );
+}
 
-      <div style={{ marginTop: 24 }}>
-        <Toggle value={cfg.session_longue} onChange={v => set("session_longue", v)} label="Sessions longues (30 jours)" sub="Désactiver pour des sessions de 24h seulement" />
+// ============================================================
+//  SECTION UTILISATEURS (admin only)
+// ============================================================
+
+function SectionUtilisateurs() {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState({ username: "", nom: "", email: "", password: "", role: "utilisateur" });
+  const [msg, setMsg] = useState(null);
+
+  const charger = async () => {
+    setLoading(true);
+    try {
+      const data = await getUtilisateurs();
+      setUsers(data);
+    } catch { /* ignore */ }
+    setLoading(false);
+  };
+
+  useEffect(() => { charger(); }, []);
+
+  const resetForm = () => {
+    setForm({ username: "", nom: "", email: "", password: "", role: "utilisateur" });
+    setShowForm(false);
+    setEditId(null);
+  };
+
+  const handleCreate = async () => {
+    setMsg(null);
+    try {
+      await creerUtilisateur(form);
+      setMsg({ ok: true, text: `Utilisateur "${form.username}" créé` });
+      resetForm();
+      charger();
+    } catch (e) {
+      setMsg({ ok: false, text: e.response?.data?.detail || "Erreur" });
+    }
+  };
+
+  const handleToggleActif = async (user) => {
+    try {
+      await modifierUtilisateur(user.id, { actif: !user.actif });
+      charger();
+    } catch (e) {
+      setMsg({ ok: false, text: e.response?.data?.detail || "Erreur" });
+    }
+  };
+
+  const handleChangeRole = async (user, newRole) => {
+    try {
+      await modifierUtilisateur(user.id, { role: newRole });
+      charger();
+    } catch (e) {
+      setMsg({ ok: false, text: e.response?.data?.detail || "Erreur" });
+    }
+  };
+
+  const handleDelete = async (user) => {
+    if (!window.confirm(`Supprimer l'utilisateur "${user.username}" ?`)) return;
+    try {
+      await supprimerUtilisateur(user.id);
+      charger();
+    } catch (e) {
+      setMsg({ ok: false, text: e.response?.data?.detail || "Erreur" });
+    }
+  };
+
+  const roleBadge = (role) => ({
+    fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6, textTransform: "uppercase", letterSpacing: 0.5,
+    background: role === "admin" ? "rgba(193,138,74,0.15)" : "rgba(223,207,196,0.08)",
+    color: role === "admin" ? C.gold : "rgba(223,207,196,0.5)",
+    border: `1px solid ${role === "admin" ? "rgba(193,138,74,0.3)" : "rgba(223,207,196,0.1)"}`,
+  });
+
+  return (
+    <div>
+      <SectionTitle>Gestion des utilisateurs</SectionTitle>
+      <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 12, padding: 16, marginBottom: 20, fontSize: 12, color: "rgba(223,207,196,0.5)", lineHeight: 1.8 }}>
+        Gérez les comptes qui ont accès à l'ERP. Les administrateurs peuvent créer d'autres utilisateurs et accéder aux paramètres. Les utilisateurs normaux accèdent au dashboard, stock, commandes et CRM.
       </div>
+
+      {msg && (
+        <div style={{ padding: "10px 14px", borderRadius: 10, marginBottom: 16, fontSize: 12, background: msg.ok ? "rgba(74,222,128,0.08)" : "rgba(232,160,184,0.08)", color: msg.ok ? C.green : C.red, border: `1px solid ${msg.ok ? "rgba(74,222,128,0.15)" : "rgba(232,160,184,0.15)"}` }}>
+          {msg.ok ? "✓" : "✗"} {msg.text}
+        </div>
+      )}
+
+      {/* Liste des utilisateurs */}
+      {loading ? (
+        <div style={{ fontSize: 12, color: "rgba(223,207,196,0.4)", padding: 20 }}>Chargement...</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+          {users.map(u => (
+            <div key={u.id} style={{
+              background: "rgba(0,0,0,0.2)", borderRadius: 12, padding: "14px 16px",
+              border: `1px solid rgba(193,138,74,0.08)`,
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              opacity: u.actif ? 1 : 0.5,
+            }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>{u.nom || u.username}</span>
+                  <span style={roleBadge(u.role)}>{u.role}</span>
+                  {!u.actif && <span style={{ fontSize: 10, color: C.red, fontWeight: 600 }}>DÉSACTIVÉ</span>}
+                </div>
+                <div style={{ fontSize: 11, color: "rgba(223,207,196,0.35)", marginTop: 3 }}>
+                  @{u.username}{u.email ? ` · ${u.email}` : ""}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <select
+                  value={u.role}
+                  onChange={e => handleChangeRole(u, e.target.value)}
+                  style={{ background: "rgba(0,0,0,0.3)", border: `1px solid rgba(193,138,74,0.15)`, borderRadius: 8, padding: "5px 8px", color: C.creme, fontSize: 11, fontFamily: "'Outfit', sans-serif", outline: "none" }}
+                >
+                  <option value="admin">Admin</option>
+                  <option value="utilisateur">Utilisateur</option>
+                </select>
+                <button onClick={() => handleToggleActif(u)} style={{ background: "rgba(0,0,0,0.2)", border: `1px solid rgba(193,138,74,0.15)`, borderRadius: 8, padding: "5px 10px", color: u.actif ? C.red : C.green, fontSize: 11, cursor: "pointer", fontFamily: "'Outfit', sans-serif" }}>
+                  {u.actif ? "Désactiver" : "Activer"}
+                </button>
+                <button onClick={() => handleDelete(u)} style={{ background: "rgba(232,160,184,0.08)", border: `1px solid rgba(232,160,184,0.15)`, borderRadius: 8, padding: "5px 10px", color: C.red, fontSize: 11, cursor: "pointer", fontFamily: "'Outfit', sans-serif" }}>
+                  Supprimer
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Formulaire de création */}
+      {!showForm ? (
+        <button onClick={() => setShowForm(true)} style={{ background: `linear-gradient(135deg, ${C.prune}, ${C.gold})`, border: "none", borderRadius: 10, padding: "10px 20px", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Outfit', sans-serif" }}>
+          + Nouvel utilisateur
+        </button>
+      ) : (
+        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 12, padding: 20, border: `1px solid rgba(193,138,74,0.15)` }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.gold, marginBottom: 16 }}>Créer un utilisateur</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <Field label="Identifiant">
+              <Input value={form.username} onChange={v => setForm(f => ({ ...f, username: v }))} placeholder="jean.dupont" />
+            </Field>
+            <Field label="Nom complet">
+              <Input value={form.nom} onChange={v => setForm(f => ({ ...f, nom: v }))} placeholder="Jean Dupont" />
+            </Field>
+            <Field label="Email">
+              <Input value={form.email} onChange={v => setForm(f => ({ ...f, email: v }))} placeholder="jean@kahlocafe.fr" type="email" />
+            </Field>
+            <Field label="Mot de passe" hint="Min. 6 caractères">
+              <Input value={form.password} onChange={v => setForm(f => ({ ...f, password: v }))} placeholder="••••••••" type="password" />
+            </Field>
+          </div>
+          <Field label="Rôle">
+            <div style={{ display: "flex", gap: 10 }}>
+              {[{ v: "utilisateur", l: "Utilisateur", desc: "Accès lecture + saisie" }, { v: "admin", l: "Administrateur", desc: "Accès complet + paramètres" }].map(r => (
+                <div key={r.v} onClick={() => setForm(f => ({ ...f, role: r.v }))} style={{
+                  flex: 1, padding: "12px 16px", borderRadius: 10, cursor: "pointer", transition: "all 0.2s",
+                  background: form.role === r.v ? "rgba(193,138,74,0.15)" : "rgba(0,0,0,0.2)",
+                  border: `1px solid ${form.role === r.v ? "rgba(193,138,74,0.4)" : "rgba(193,138,74,0.1)"}`,
+                }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: form.role === r.v ? C.gold : "rgba(223,207,196,0.5)" }}>{r.l}</div>
+                  <div style={{ fontSize: 11, color: "rgba(223,207,196,0.3)", marginTop: 3 }}>{r.desc}</div>
+                </div>
+              ))}
+            </div>
+          </Field>
+          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+            <button onClick={handleCreate} disabled={!form.username || !form.password} style={{ background: `linear-gradient(135deg, ${C.prune}, ${C.gold})`, border: "none", borderRadius: 10, padding: "10px 20px", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Outfit', sans-serif" }}>
+              Créer l'utilisateur
+            </button>
+            <button onClick={resetForm} style={{ background: "transparent", border: `1px solid rgba(223,207,196,0.2)`, borderRadius: 10, padding: "10px 20px", color: "rgba(223,207,196,0.5)", fontSize: 13, cursor: "pointer", fontFamily: "'Outfit', sans-serif" }}>
+              Annuler
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+//  SECTION DOMAINES (admin only)
+// ============================================================
+
+function SectionDomaines() {
+  const [domaines, setDomaines] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ domaine: "", type: "principal", dns_valeur_attendue: "", notes: "" });
+  const [msg, setMsg] = useState(null);
+  const [verifying, setVerifying] = useState(null);
+
+  const charger = async () => {
+    setLoading(true);
+    try {
+      const data = await getDomaines();
+      setDomaines(data);
+    } catch { /* ignore */ }
+    setLoading(false);
+  };
+
+  useEffect(() => { charger(); }, []);
+
+  const handleAdd = async () => {
+    setMsg(null);
+    try {
+      await ajouterDomaine(form);
+      setMsg({ ok: true, text: `Domaine "${form.domaine}" ajouté` });
+      setForm({ domaine: "", type: "principal", dns_valeur_attendue: "", notes: "" });
+      setShowForm(false);
+      charger();
+    } catch (e) {
+      setMsg({ ok: false, text: e.response?.data?.detail || "Erreur" });
+    }
+  };
+
+  const handleVerify = async (dom) => {
+    setVerifying(dom.id);
+    try {
+      const result = await verifierDomaine(dom.id);
+      setMsg({
+        ok: result.dns.valide,
+        text: result.dns.valide
+          ? `DNS vérifié pour ${dom.domaine} (${result.dns.type_enregistrement}: ${result.dns.valeur_trouvee})`
+          : `DNS non valide pour ${dom.domaine} — ${result.dns.erreur || "Valeur trouvée: " + (result.dns.valeur_trouvee || "aucune")}`,
+      });
+      charger();
+    } catch (e) {
+      setMsg({ ok: false, text: e.response?.data?.detail || "Erreur lors de la vérification" });
+    }
+    setVerifying(null);
+  };
+
+  const handleDelete = async (dom) => {
+    if (!window.confirm(`Supprimer le domaine "${dom.domaine}" ?`)) return;
+    try {
+      await supprimerDomaine(dom.id);
+      charger();
+    } catch (e) {
+      setMsg({ ok: false, text: e.response?.data?.detail || "Erreur" });
+    }
+  };
+
+  const handleToggleSSL = async (dom) => {
+    try {
+      await modifierDomaine(dom.id, { ssl_actif: !dom.ssl_actif });
+      charger();
+    } catch { /* ignore */ }
+  };
+
+  const statutBadge = (statut) => {
+    const map = {
+      en_attente: { bg: "rgba(255,200,0,0.1)", color: "#fbbf24", border: "rgba(255,200,0,0.2)", label: "En attente" },
+      verifie:    { bg: "rgba(74,222,128,0.1)", color: C.green, border: "rgba(74,222,128,0.2)", label: "Vérifié" },
+      erreur:     { bg: "rgba(232,160,184,0.1)", color: C.red, border: "rgba(232,160,184,0.2)", label: "Erreur DNS" },
+    };
+    const s = map[statut] || map.en_attente;
+    return (
+      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: s.bg, color: s.color, border: `1px solid ${s.border}` }}>
+        {s.label}
+      </span>
+    );
+  };
+
+  return (
+    <div>
+      <SectionTitle>Gestion des domaines</SectionTitle>
+      <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 12, padding: 16, marginBottom: 20, fontSize: 12, color: "rgba(223,207,196,0.5)", lineHeight: 1.8 }}>
+        Configurez vos noms de domaine pour accéder à l'ERP. Ajoutez un enregistrement DNS de type A pointant vers l'IP de votre serveur, puis lancez la vérification pour confirmer la propagation.
+      </div>
+
+      {msg && (
+        <div style={{ padding: "10px 14px", borderRadius: 10, marginBottom: 16, fontSize: 12, background: msg.ok ? "rgba(74,222,128,0.08)" : "rgba(232,160,184,0.08)", color: msg.ok ? C.green : C.red, border: `1px solid ${msg.ok ? "rgba(74,222,128,0.15)" : "rgba(232,160,184,0.15)"}` }}>
+          {msg.ok ? "✓" : "✗"} {msg.text}
+        </div>
+      )}
+
+      {/* Liste des domaines */}
+      {loading ? (
+        <div style={{ fontSize: 12, color: "rgba(223,207,196,0.4)", padding: 20 }}>Chargement...</div>
+      ) : domaines.length === 0 ? (
+        <div style={{ background: "rgba(0,0,0,0.15)", borderRadius: 12, padding: 24, textAlign: "center", marginBottom: 20 }}>
+          <div style={{ fontSize: 24, marginBottom: 8 }}>◆</div>
+          <div style={{ fontSize: 13, color: "rgba(223,207,196,0.4)" }}>Aucun domaine configuré</div>
+          <div style={{ fontSize: 11, color: "rgba(223,207,196,0.25)", marginTop: 4 }}>Ajoutez votre premier domaine ci-dessous</div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+          {domaines.map(d => (
+            <div key={d.id} style={{ background: "rgba(0,0,0,0.2)", borderRadius: 12, padding: 16, border: `1px solid rgba(193,138,74,0.08)` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                    <span style={{ fontSize: 15, fontWeight: 600, fontFamily: "monospace" }}>{d.domaine}</span>
+                    {statutBadge(d.statut)}
+                    {d.ssl_actif && <span style={{ fontSize: 10, fontWeight: 600, color: C.green }}>SSL</span>}
+                    <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 6, background: "rgba(223,207,196,0.05)", color: "rgba(223,207,196,0.4)", border: "1px solid rgba(223,207,196,0.08)" }}>{d.type}</span>
+                  </div>
+                  {d.dns_valeur_attendue && (
+                    <div style={{ fontSize: 11, color: "rgba(223,207,196,0.35)", marginBottom: 4 }}>
+                      Valeur attendue : <span style={{ fontFamily: "monospace", color: "rgba(223,207,196,0.5)" }}>{d.dns_valeur_attendue}</span>
+                    </div>
+                  )}
+                  {d.dns_valeur_actuelle && (
+                    <div style={{ fontSize: 11, color: "rgba(223,207,196,0.35)" }}>
+                      Valeur actuelle : <span style={{ fontFamily: "monospace", color: d.statut === "verifie" ? C.green : C.red }}>{d.dns_valeur_actuelle}</span>
+                    </div>
+                  )}
+                  {d.derniere_verif && (
+                    <div style={{ fontSize: 10, color: "rgba(223,207,196,0.2)", marginTop: 4 }}>
+                      Dernière vérif. : {new Date(d.derniere_verif).toLocaleString("fr-FR")}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={() => handleVerify(d)} disabled={verifying === d.id} style={{ background: "rgba(193,138,74,0.08)", border: `1px solid rgba(193,138,74,0.2)`, borderRadius: 8, padding: "6px 12px", color: C.gold, fontSize: 11, cursor: "pointer", fontFamily: "'Outfit', sans-serif", fontWeight: 600 }}>
+                    {verifying === d.id ? "Vérification..." : "Vérifier DNS"}
+                  </button>
+                  <button onClick={() => handleToggleSSL(d)} style={{ background: "rgba(0,0,0,0.2)", border: `1px solid rgba(193,138,74,0.15)`, borderRadius: 8, padding: "6px 12px", color: d.ssl_actif ? C.green : "rgba(223,207,196,0.4)", fontSize: 11, cursor: "pointer", fontFamily: "'Outfit', sans-serif" }}>
+                    {d.ssl_actif ? "SSL actif" : "Activer SSL"}
+                  </button>
+                  <button onClick={() => handleDelete(d)} style={{ background: "rgba(232,160,184,0.08)", border: `1px solid rgba(232,160,184,0.15)`, borderRadius: 8, padding: "6px 12px", color: C.red, fontSize: 11, cursor: "pointer", fontFamily: "'Outfit', sans-serif" }}>
+                    Supprimer
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Formulaire d'ajout */}
+      {!showForm ? (
+        <button onClick={() => setShowForm(true)} style={{ background: `linear-gradient(135deg, ${C.prune}, ${C.gold})`, border: "none", borderRadius: 10, padding: "10px 20px", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Outfit', sans-serif" }}>
+          + Ajouter un domaine
+        </button>
+      ) : (
+        <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 12, padding: 20, border: `1px solid rgba(193,138,74,0.15)` }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.gold, marginBottom: 16 }}>Ajouter un domaine</div>
+          <Field label="Nom de domaine" hint="Exemple : erp.kahlocafe.fr (sans http://)">
+            <Input value={form.domaine} onChange={v => setForm(f => ({ ...f, domaine: v }))} placeholder="erp.kahlocafe.fr" monospace />
+          </Field>
+          <Field label="Type">
+            <div style={{ display: "flex", gap: 10 }}>
+              {[{ v: "principal", l: "Principal" }, { v: "alias", l: "Alias" }, { v: "redirect", l: "Redirection" }].map(t => (
+                <div key={t.v} onClick={() => setForm(f => ({ ...f, type: t.v }))} style={{
+                  flex: 1, padding: "10px 16px", borderRadius: 10, cursor: "pointer", textAlign: "center",
+                  fontSize: 13, fontWeight: 600, transition: "all 0.2s",
+                  background: form.type === t.v ? "rgba(193,138,74,0.15)" : "rgba(0,0,0,0.2)",
+                  border: `1px solid ${form.type === t.v ? "rgba(193,138,74,0.4)" : "rgba(193,138,74,0.1)"}`,
+                  color: form.type === t.v ? C.gold : "rgba(223,207,196,0.4)",
+                }}>
+                  {t.l}
+                </div>
+              ))}
+            </div>
+          </Field>
+          <Field label="Adresse IP ou CNAME attendu" hint="L'adresse IP de votre serveur (ex: 89.168.xx.xx) ou un CNAME">
+            <Input value={form.dns_valeur_attendue} onChange={v => setForm(f => ({ ...f, dns_valeur_attendue: v }))} placeholder="89.168.xx.xx" monospace />
+          </Field>
+          <Field label="Notes (optionnel)">
+            <Input value={form.notes} onChange={v => setForm(f => ({ ...f, notes: v }))} placeholder="Domaine principal de production..." />
+          </Field>
+
+          <div style={{ background: "rgba(193,138,74,0.05)", borderRadius: 10, padding: 14, marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.gold, marginBottom: 8 }}>Configuration DNS requise</div>
+            <div style={{ fontSize: 12, color: "rgba(223,207,196,0.5)", lineHeight: 1.8 }}>
+              Chez votre registrar (OVH, Gandi, Cloudflare...), ajoutez :<br />
+              <span style={{ fontFamily: "monospace", color: C.creme }}>Type A</span> — <span style={{ fontFamily: "monospace", color: "rgba(223,207,196,0.5)" }}>{form.domaine || "votre-domaine.fr"}</span> → <span style={{ fontFamily: "monospace", color: C.green }}>{form.dns_valeur_attendue || "IP_DU_SERVEUR"}</span><br />
+              <span style={{ fontSize: 11, color: "rgba(223,207,196,0.3)" }}>La propagation DNS peut prendre jusqu'à 48h (généralement 5-30 min).</span>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={handleAdd} disabled={!form.domaine} style={{ background: `linear-gradient(135deg, ${C.prune}, ${C.gold})`, border: "none", borderRadius: 10, padding: "10px 20px", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Outfit', sans-serif" }}>
+              Ajouter le domaine
+            </button>
+            <button onClick={() => setShowForm(false)} style={{ background: "transparent", border: `1px solid rgba(223,207,196,0.2)`, borderRadius: 10, padding: "10px 20px", color: "rgba(223,207,196,0.5)", fontSize: 13, cursor: "pointer", fontFamily: "'Outfit', sans-serif" }}>
+              Annuler
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -532,6 +957,8 @@ const DEFAULT_STATE = {
 
 export default function KahloParametres() {
   const qc = useQueryClient();
+  const isAdmin = useAuthStore((s) => s.role) === "admin";
+  const SECTIONS = SECTIONS_BASE.filter(s => !s.adminOnly || isAdmin);
   const [active, setActive] = useState("general");
   const [state, setState] = useState(DEFAULT_STATE);
   const [saved, setSaved] = useState({ ...DEFAULT_STATE });
@@ -594,8 +1021,10 @@ export default function KahloParametres() {
       case "ia":         return <SectionIA cfg={cfg} set={s} />;
       case "stock":      return <SectionStock cfg={cfg} set={s} />;
       case "crm":        return <SectionCRM cfg={cfg} set={s} />;
-      case "securite":   return <SectionSecurite cfg={cfg} set={s} />;
-      case "sauvegarde": return <SectionSauvegarde cfg={cfg} set={s} />;
+      case "securite":     return <SectionSecurite cfg={cfg} set={s} />;
+      case "utilisateurs": return <SectionUtilisateurs />;
+      case "domaines":     return <SectionDomaines />;
+      case "sauvegarde":   return <SectionSauvegarde cfg={cfg} set={s} />;
       default: return null;
     }
   };

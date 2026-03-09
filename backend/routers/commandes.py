@@ -21,6 +21,7 @@ from services.stock import decrementer_stock
 from services.brevo import notifier_commande_prete, notifier_client_paiement_recu
 from services.factures import generer_facture_pdf
 from services.sumup import creer_checkout, get_checkout
+from routers.auth import verifier_token
 
 router = APIRouter()
 
@@ -93,7 +94,7 @@ def _serialise_commande(c: Commande, avec_lignes: bool = False) -> dict:
 # ============================================================
 
 @router.get("/stats")
-async def get_stats(db: AsyncSession = Depends(get_db)):
+async def get_stats(db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     result = await db.execute(select(Commande))
     commandes = result.scalars().all()
     actives = [c for c in commandes if c.statut != StatutCommande.annulee]
@@ -111,7 +112,8 @@ async def get_commandes(
     statut: Optional[StatutCommande] = None,
     marche_id: Optional[int] = None,
     client_id: Optional[int] = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    token: str = Depends(verifier_token)
 ):
     query = (
         select(Commande)
@@ -130,7 +132,7 @@ async def get_commandes(
 
 
 @router.get("/{commande_id}")
-async def get_commande(commande_id: int, db: AsyncSession = Depends(get_db)):
+async def get_commande(commande_id: int, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     result = await db.execute(
         select(Commande)
         .options(selectinload(Commande.lignes))
@@ -147,7 +149,7 @@ async def get_commande(commande_id: int, db: AsyncSession = Depends(get_db)):
 # ============================================================
 
 @router.post("/", status_code=201)
-async def creer_commande(data: CommandeCreate, db: AsyncSession = Depends(get_db)):
+async def creer_commande(data: CommandeCreate, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     # Vérifier client
     client = await db.get(Client, data.client_id)
     if not client:
@@ -233,7 +235,8 @@ async def creer_commande(data: CommandeCreate, db: AsyncSession = Depends(get_db
 async def changer_statut(
     commande_id: int,
     data: ChangerStatut,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    token: str = Depends(verifier_token)
 ):
     result = await db.execute(
         select(Commande)
@@ -294,7 +297,7 @@ async def changer_statut(
 # ============================================================
 
 @router.post("/{commande_id}/notifier-prete")
-async def notifier_prete(commande_id: int, db: AsyncSession = Depends(get_db)):
+async def notifier_prete(commande_id: int, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     """Envoie (ou renvoie) la notification Brevo 'commande prête'"""
     result = await db.execute(
         select(Commande)
@@ -313,7 +316,7 @@ async def notifier_prete(commande_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{commande_id}/checkout-sumup")
-async def creer_lien_sumup(commande_id: int, db: AsyncSession = Depends(get_db)):
+async def creer_lien_sumup(commande_id: int, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     """Crée ou recrée un lien de paiement SumUp"""
     result = await db.execute(
         select(Commande)
@@ -341,7 +344,7 @@ async def creer_lien_sumup(commande_id: int, db: AsyncSession = Depends(get_db))
 
 
 @router.get("/{commande_id}/statut-paiement")
-async def statut_paiement(commande_id: int, db: AsyncSession = Depends(get_db)):
+async def statut_paiement(commande_id: int, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     """Interroge SumUp pour connaître l'état du checkout"""
     commande = await db.get(Commande, commande_id)
     if not commande:
@@ -362,7 +365,7 @@ async def statut_paiement(commande_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{commande_id}/facture")
-async def telecharger_facture(commande_id: int, db: AsyncSession = Depends(get_db)):
+async def telecharger_facture(commande_id: int, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     """Génère (si besoin) et retourne la facture PDF"""
     result = await db.execute(
         select(Commande)

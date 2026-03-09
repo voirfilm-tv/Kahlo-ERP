@@ -10,7 +10,8 @@ from contextlib import asynccontextmanager
 from database import engine, Base
 from routers import (
     auth, stock, fournisseurs, clients, commandes,
-    marches, calendrier, analytics, webhooks, ia, parametres
+    marches, calendrier, analytics, webhooks, ia, parametres,
+    utilisateurs
 )
 from services.scheduler import start_scheduler
 
@@ -53,6 +54,7 @@ app.include_router(analytics.router,    prefix="/api/analytics",    tags=["Analy
 app.include_router(webhooks.router,     prefix="/api/webhooks",     tags=["Webhooks"])
 app.include_router(ia.router,           prefix="/api/ia",           tags=["IA Gemini"])
 app.include_router(parametres.router,   prefix="/api/parametres",   tags=["Paramètres"])
+app.include_router(utilisateurs.router, prefix="/api/utilisateurs", tags=["Utilisateurs"])
 
 
 @app.get("/api/health")

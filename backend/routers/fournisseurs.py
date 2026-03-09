@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from typing import Optional
 from database import get_db
 from models import Fournisseur
+from routers.auth import verifier_token
 
 router = APIRouter()
 
@@ -21,14 +22,14 @@ class FournisseurCreate(BaseModel):
 
 
 @router.get("/")
-async def get_fournisseurs(db: AsyncSession = Depends(get_db)):
+async def get_fournisseurs(db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     result = await db.execute(select(Fournisseur).order_by(Fournisseur.score.desc()))
     fournisseurs = result.scalars().all()
     return fournisseurs
 
 
 @router.post("/", status_code=201)
-async def creer_fournisseur(data: FournisseurCreate, db: AsyncSession = Depends(get_db)):
+async def creer_fournisseur(data: FournisseurCreate, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     f = Fournisseur(**data.model_dump())
     db.add(f)
     await db.commit()
@@ -37,7 +38,7 @@ async def creer_fournisseur(data: FournisseurCreate, db: AsyncSession = Depends(
 
 
 @router.patch("/{fid}/score")
-async def noter_fournisseur(fid: int, score: float, db: AsyncSession = Depends(get_db)):
+async def noter_fournisseur(fid: int, score: float, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     result = await db.execute(select(Fournisseur).where(Fournisseur.id == fid))
     f = result.scalar_one_or_none()
     if not f:

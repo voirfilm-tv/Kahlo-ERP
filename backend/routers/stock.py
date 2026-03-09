@@ -13,6 +13,7 @@ from datetime import datetime
 from database import get_db
 from models import Lot, Fournisseur
 from services.ia import calculer_epuisement, recommander_assortiment
+from routers.auth import verifier_token
 
 router = APIRouter()
 
@@ -54,7 +55,8 @@ class AjustementStock(BaseModel):
 async def get_lots(
     actif: bool = True,
     critique_only: bool = False,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    token: str = Depends(verifier_token)
 ):
     """Liste tous les lots avec calculs enrichis"""
     result = await db.execute(
@@ -88,7 +90,7 @@ async def get_lots(
 
 
 @router.get("/stats")
-async def get_stats_stock(db: AsyncSession = Depends(get_db)):
+async def get_stats_stock(db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     """Stats globales du stock"""
     result = await db.execute(select(Lot).where(Lot.actif == True))
     lots = result.scalars().all()
@@ -111,7 +113,7 @@ async def get_stats_stock(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{lot_id}")
-async def get_lot(lot_id: int, db: AsyncSession = Depends(get_db)):
+async def get_lot(lot_id: int, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     result = await db.execute(select(Lot).where(Lot.id == lot_id))
     lot = result.scalar_one_or_none()
     if not lot:
@@ -120,7 +122,7 @@ async def get_lot(lot_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/")
-async def create_lot(data: LotCreate, db: AsyncSession = Depends(get_db)):
+async def create_lot(data: LotCreate, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     lot = Lot(**data.model_dump())
     db.add(lot)
     await db.flush()
@@ -128,7 +130,7 @@ async def create_lot(data: LotCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/{lot_id}")
-async def update_lot(lot_id: int, data: LotUpdate, db: AsyncSession = Depends(get_db)):
+async def update_lot(lot_id: int, data: LotUpdate, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     result = await db.execute(select(Lot).where(Lot.id == lot_id))
     lot = result.scalar_one_or_none()
     if not lot:
@@ -140,7 +142,7 @@ async def update_lot(lot_id: int, data: LotUpdate, db: AsyncSession = Depends(ge
 
 
 @router.post("/ajustement")
-async def ajuster_stock(data: AjustementStock, db: AsyncSession = Depends(get_db)):
+async def ajuster_stock(data: AjustementStock, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     """Ajustement manuel du stock (entrée ou sortie)"""
     result = await db.execute(select(Lot).where(Lot.id == data.lot_id))
     lot = result.scalar_one_or_none()
@@ -160,7 +162,8 @@ async def ajuster_stock(data: AjustementStock, db: AsyncSession = Depends(get_db
 async def prevision_epuisement(
     lot_id: int,
     ventes_mois_kg: float = Query(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    token: str = Depends(verifier_token)
 ):
     """Prévision d'épuisement basée sur la vitesse de vente"""
     result = await db.execute(select(Lot).where(Lot.id == lot_id))
@@ -178,7 +181,7 @@ async def prevision_epuisement(
 
 
 @router.delete("/{lot_id}")
-async def archive_lot(lot_id: int, db: AsyncSession = Depends(get_db)):
+async def archive_lot(lot_id: int, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     """Archive un lot (soft delete)"""
     result = await db.execute(select(Lot).where(Lot.id == lot_id))
     lot = result.scalar_one_or_none()

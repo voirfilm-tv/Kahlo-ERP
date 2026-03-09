@@ -1,12 +1,13 @@
 """KAHLO CAFÉ — Router IA Gemini"""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
 from services.ia import (
     analyser_marche, suggerer_stock_marche,
     generer_fiche_produit, analyser_dashboard
 )
+from routers.auth import verifier_token
 
 router = APIRouter()
 
@@ -26,7 +27,7 @@ class FicheProduitRequest(BaseModel):
 
 
 @router.post("/analyser-marche")
-async def analyser(req: AnalyseMarcheRequest):
+async def analyser(req: AnalyseMarcheRequest, token: str = Depends(verifier_token)):
     try:
         texte = await analyser_marche(req.marche_data)
         return {"analyse": texte}
@@ -35,7 +36,7 @@ async def analyser(req: AnalyseMarcheRequest):
 
 
 @router.post("/suggestion-stock")
-async def suggestion_stock(req: SuggestionStockRequest):
+async def suggestion_stock(req: SuggestionStockRequest, token: str = Depends(verifier_token)):
     try:
         result = await suggerer_stock_marche(req.marche, req.stocks, req.historique)
         return result
@@ -44,7 +45,7 @@ async def suggestion_stock(req: SuggestionStockRequest):
 
 
 @router.post("/fiche-produit")
-async def fiche_produit(req: FicheProduitRequest):
+async def fiche_produit(req: FicheProduitRequest, token: str = Depends(verifier_token)):
     try:
         result = await generer_fiche_produit(req.lot)
         return result
