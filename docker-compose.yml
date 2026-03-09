@@ -1,0 +1,159 @@
+version: "3.9"
+
+# ============================================================
+#  KAHLO CAFÉ — ERP Stack
+#  RAM cible : ~400MB en usage normal (sans Gemini API)
+#  Machine : 4GB RAM / Ubuntu
+# ============================================================
+
+services:
+
+  # ----------------------------------------------------------
+  #  PostgreSQL — Base de données principale
+  #  RAM : ~80MB
+  # ----------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    container_name: kahlo_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kahlo
+      POSTGRES_USER: kahlo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"           # accès local uniquement
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kahlo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # ----------------------------------------------------------
+  #  Redis — Cache, sessions, queue offline sync
+  #  RAM : ~30MB
+  # ----------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: kahlo_redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 50mb --maxmemory-policy allkeys-lru --save ""
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # ----------------------------------------------------------
+  #  Backend — FastAPI (Python)
+  #  RAM : ~120MB
+  # ----------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: kahlo_backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://kahlo:${POSTGRES_PASSWORD}@db:5432/kahlo
+      REDIS_URL: redis://redis:6379
+      SUMUP_API_KEY: ${SUMUP_API_KEY}
+      SUMUP_CLIENT_ID: ${SUMUP_CLIENT_ID}
+      SUMUP_CLIENT_SECRET: ${SUMUP_CLIENT_SECRET}
+      SUMUP_WEBHOOK_SECRET: ${SUMUP_WEBHOOK_SECRET}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      BREVO_API_KEY: ${BREVO_API_KEY}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      SECRET_KEY: ${SECRET_KEY}
+      CALDAV_BASE_URL: http://caldav:5232
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - uploads_data:/app/uploads
+    deploy:
+      resources:
+        limits:
+          memory: 200M
+
+  # ----------------------------------------------------------
+  #  CalDAV — Radicale (sync Apple + Google Calendar)
+  #  RAM : ~30MB
+  # ----------------------------------------------------------
+  caldav:
+    image: tomsquest/docker-radicale:latest
+    container_name: kahlo_caldav
+    restart: unless-stopped
+    volumes:
+      - caldav_data:/data
+      - ./nginx/radicale.conf:/etc/radicale/config:ro
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # ----------------------------------------------------------
+  #  Frontend — React (Vite) buildé en static
+  #  RAM : ~20MB (nginx)
+  # ----------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: kahlo_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+  # ----------------------------------------------------------
+  #  Nginx — Reverse proxy + SSL
+  #  RAM : ~10MB
+  # ----------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: kahlo_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - backend
+      - frontend
+      - caldav
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+volumes:
+  postgres_data:
+  redis_data:
+  caldav_data:
+  uploads_data:
+
+networks:
+  default:
+    name: kahlo_network
