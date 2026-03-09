@@ -681,7 +681,7 @@ export default function KahloParametres() {
 
       {/* Barre de sauvegarde flottante */}
       <SaveBar dirty={dirty} onSave={handleSave} onReset={handleReset} saving={saveMutation.isPending} />
-    </div>
     </Layout>
+    </div>
   );
 }

@@ -244,3 +244,13 @@ export const testerConnexionGemini = () =>
 
 export const sauvegarderMaintenant = () =>
   api.post("/parametres/sauvegarde").then((r) => r.data);
+
+// ────────────────────────────────────────────────────────────
+//  SYNC OFFLINE
+// ────────────────────────────────────────────────────────────
+
+export const lancerSync = () =>
+  api.post("/sync").then((r) => r.data);
+
+export const getSyncStatus = () =>
+  api.get("/sync/status").then((r) => r.data);

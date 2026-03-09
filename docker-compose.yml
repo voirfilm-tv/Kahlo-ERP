@@ -25,9 +25,10 @@ services:
       - "5432:5432"           # accès local uniquement
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kahlo"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -59,11 +60,11 @@ services:
   #  RAM : ~120MB
   # ----------------------------------------------------------
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: python:3.11-slim
     container_name: kahlo_backend
     restart: unless-stopped
+    working_dir: /app
+    command: ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     environment:
       DATABASE_URL: postgresql://kahlo:${POSTGRES_PASSWORD}@db:5432/kahlo
       REDIS_URL: redis://redis:6379
@@ -77,6 +78,7 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       SECRET_KEY: ${SECRET_KEY}
       CALDAV_BASE_URL: http://caldav:5232
+      PYTHONPATH: /host-packages
     depends_on:
       db:
         condition: service_healthy
@@ -85,6 +87,7 @@ services:
     volumes:
       - ./backend:/app
       - uploads_data:/app/uploads
+      - /opt/kahlo-deps:/host-packages:ro
     deploy:
       resources:
         limits:
