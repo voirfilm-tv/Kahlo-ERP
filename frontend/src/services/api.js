@@ -42,9 +42,7 @@ export default api;
 // ────────────────────────────────────────────────────────────
 
 export const login = (username, password) =>
-  api.post("/auth/token", new URLSearchParams({ username, password }), {
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-  }).then((r) => r.data);
+  api.post("/auth/login", { username, password }).then((r) => r.data);
 
 // ────────────────────────────────────────────────────────────
 //  DASHBOARD
@@ -244,6 +242,48 @@ export const testerConnexionGemini = () =>
 
 export const sauvegarderMaintenant = () =>
   api.post("/parametres/sauvegarde").then((r) => r.data);
+
+// ────────────────────────────────────────────────────────────
+//  UTILISATEURS & MOT DE PASSE
+// ────────────────────────────────────────────────────────────
+
+export const changerMotDePasse = (ancien, nouveau, confirmer) =>
+  api.post("/utilisateurs/mot-de-passe", {
+    ancien_mot_de_passe: ancien,
+    nouveau_mot_de_passe: nouveau,
+    confirmer_mot_de_passe: confirmer,
+  }).then((r) => r.data);
+
+export const getUtilisateurs = () =>
+  api.get("/utilisateurs").then((r) => r.data);
+
+export const creerUtilisateur = (data) =>
+  api.post("/utilisateurs", data).then((r) => r.data);
+
+export const modifierUtilisateur = (id, data) =>
+  api.patch(`/utilisateurs/${id}`, data).then((r) => r.data);
+
+export const supprimerUtilisateur = (id) =>
+  api.delete(`/utilisateurs/${id}`).then((r) => r.data);
+
+// ────────────────────────────────────────────────────────────
+//  DOMAINES
+// ────────────────────────────────────────────────────────────
+
+export const getDomaines = () =>
+  api.get("/utilisateurs/domaines").then((r) => r.data);
+
+export const ajouterDomaine = (data) =>
+  api.post("/utilisateurs/domaines", data).then((r) => r.data);
+
+export const verifierDomaine = (id) =>
+  api.post(`/utilisateurs/domaines/${id}/verifier`).then((r) => r.data);
+
+export const modifierDomaine = (id, data) =>
+  api.patch(`/utilisateurs/domaines/${id}`, data).then((r) => r.data);
+
+export const supprimerDomaine = (id) =>
+  api.delete(`/utilisateurs/domaines/${id}`).then((r) => r.data);
 
 // ────────────────────────────────────────────────────────────
 //  SYNC OFFLINE
