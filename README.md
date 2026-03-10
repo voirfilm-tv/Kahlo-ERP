@@ -115,7 +115,7 @@ Indicateur de sync visible en haut de l'interface.
 ./start.sh stop
 
 # Voir les logs
-docker-compose logs -f backend
+docker compose logs -f backend
 
 # Accéder à la base de données
 docker exec -it kahlo_db psql -U kahlo -d kahlo

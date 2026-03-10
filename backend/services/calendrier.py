@@ -6,7 +6,9 @@ Sync bidirectionnelle CalDAV (Apple) + Google Calendar API
 import caldav
 import vobject
 import os
-from datetime import datetime
+import asyncio
+from datetime import datetime, timezone
+from functools import partial
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 import logging
@@ -14,8 +16,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 CALDAV_URL = os.getenv("CALDAV_BASE_URL", "http://caldav:5232")
-CALDAV_USER = "kahlo"
-CALDAV_PASSWORD = os.getenv("CALDAV_PASSWORD", "kahlo")
+CALDAV_USER = os.getenv("CALDAV_USER", "kahlo")
+CALDAV_PASSWORD = os.getenv("CALDAV_PASSWORD", "changeme")
+
+
+async def _run_sync(func, *args, **kwargs):
+    """Exécute une fonction synchrone (CalDAV/Google) dans un thread pool."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, partial(func, *args, **kwargs))
 
 
 # ============================================================
@@ -30,86 +38,93 @@ def get_caldav_client():
     )
 
 
+def _creer_evenement_caldav_sync(evenement: dict) -> str:
+    """Crée un événement dans Radicale (CalDAV) — synchrone."""
+    import uuid
+    client = get_caldav_client()
+    principal = client.principal()
+    calendars = principal.calendars()
+
+    if not calendars:
+        cal = principal.make_calendar(name="Kahlo Café")
+    else:
+        cal = calendars[0]
+
+    vcal = vobject.iCalendar()
+    vevent = vobject.newFromBehavior("vevent")
+
+    uid = str(uuid.uuid4())
+    vevent.add("uid").value = uid
+    vevent.add("summary").value = evenement["titre"]
+    vevent.add("dtstart").value = evenement["date_debut"]
+    vevent.add("dtend").value = evenement.get("date_fin", evenement["date_debut"])
+    if evenement.get("notes"):
+        vevent.add("description").value = evenement["notes"]
+    if evenement.get("lieu"):
+        vevent.add("location").value = evenement["lieu"]
+
+    vcal.add(vevent)
+    cal.save_event(vcal.serialize())
+    return uid
+
+
 async def creer_evenement_caldav(evenement: dict) -> str:
     """Crée un événement dans Radicale (CalDAV) → sync Apple Calendar"""
     try:
-        client = get_caldav_client()
-        principal = client.principal()
-        calendars = principal.calendars()
-
-        if not calendars:
-            cal = principal.make_calendar(name="Kahlo Café")
-        else:
-            cal = calendars[0]
-
-        # Construire le vEvent
-        vcal = vobject.iCalendar()
-        vevent = vobject.newFromBehavior("vevent")
-
-        import uuid
-        uid = str(uuid.uuid4())
-        vevent.add("uid").value = uid
-        vevent.add("summary").value = evenement["titre"]
-        vevent.add("dtstart").value = evenement["date_debut"]
-        vevent.add("dtend").value = evenement.get("date_fin", evenement["date_debut"])
-        if evenement.get("notes"):
-            vevent.add("description").value = evenement["notes"]
-        if evenement.get("lieu"):
-            vevent.add("location").value = evenement["lieu"]
-
-        vcal.add(vevent)
-        cal.save_event(vcal.serialize())
+        uid = await _run_sync(_creer_evenement_caldav_sync, evenement)
         logger.info(f"Événement CalDAV créé: {evenement['titre']}")
         return uid
-
     except Exception as e:
         logger.error(f"Erreur CalDAV: {e}")
         return None
 
 
+def _sync_caldav_sync() -> list:
+    """Récupère les événements CalDAV — synchrone."""
+    client = get_caldav_client()
+    principal = client.principal()
+    calendars = principal.calendars()
+
+    nouveaux = []
+    for cal in calendars:
+        events = cal.events()
+        for event in events:
+            vevent = event.vobject_instance.vevent
+            uid = str(vevent.uid.value)
+            titre = str(vevent.summary.value)
+            nouveaux.append({
+                "uid": uid,
+                "titre": titre,
+                "date": vevent.dtstart.value,
+            })
+    return nouveaux
+
+
 async def sync_caldav_vers_db(db) -> list:
-    """
-    Sync bidirectionnelle : récupère les événements Apple Calendar
-    et les importe dans l'ERP si nouveaux
-    """
+    """Sync bidirectionnelle : récupère les événements Apple Calendar"""
     try:
-        client = get_caldav_client()
-        principal = client.principal()
-        calendars = principal.calendars()
-
-        nouveaux = []
-        for cal in calendars:
-            events = cal.events()
-            for event in events:
-                vevent = event.vobject_instance.vevent
-                uid = str(vevent.uid.value)
-                titre = str(vevent.summary.value)
-
-                # Vérifier si existe déjà en DB
-                # (à compléter avec la vraie vérification DB)
-                nouveaux.append({
-                    "uid": uid,
-                    "titre": titre,
-                    "date": vevent.dtstart.value,
-                })
-
-        return nouveaux
-
+        return await _run_sync(_sync_caldav_sync)
     except Exception as e:
         logger.error(f"Erreur sync CalDAV: {e}")
         return []
 
 
+def _supprimer_caldav_sync(uid: str) -> bool:
+    """Supprime un événement CalDAV — synchrone."""
+    client = get_caldav_client()
+    principal = client.principal()
+    for cal in principal.calendars():
+        for event in cal.events():
+            if str(event.vobject_instance.vevent.uid.value) == uid:
+                event.delete()
+                return True
+    return False
+
+
 async def supprimer_evenement_caldav(uid: str):
     """Supprime un événement CalDAV"""
     try:
-        client = get_caldav_client()
-        principal = client.principal()
-        for cal in principal.calendars():
-            for event in cal.events():
-                if str(event.vobject_instance.vevent.uid.value) == uid:
-                    event.delete()
-                    return True
+        return await _run_sync(_supprimer_caldav_sync, uid)
     except Exception as e:
         logger.error(f"Erreur suppression CalDAV: {e}")
     return False
@@ -169,7 +184,7 @@ async def sync_google_vers_db(credentials: dict, db) -> list:
     """Récupère les nouveaux événements Google Calendar et les importe"""
     try:
         service = get_google_service(credentials)
-        now = datetime.utcnow().isoformat() + "Z"
+        now = datetime.now(timezone.utc).isoformat()
 
         events_result = service.events().list(
             calendarId="primary",

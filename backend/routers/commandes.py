@@ -271,10 +271,7 @@ async def changer_statut(
         except Exception:
             pass
 
-        # Décrémenter stock si paiement espèces (SumUp le fait via webhook)
-        if commande.paiement_mode == "especes":
-            for ligne in commande.lignes:
-                await decrementer_stock(db, ligne.lot_id, ligne.poids_g / 1000)
+        # Stock déjà décrémenté : à la création pour espèces, via webhook pour SumUp
 
         # Tampon fidélité
         client = await db.get(Client, commande.client_id)
