@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 async def decrementer_stock(db: AsyncSession, lot_id: int, quantite_kg: float):
     """Décrémente le stock d'un lot (appelé par webhook SumUp et sync offline)"""
-    result = await db.execute(select(Lot).where(Lot.id == lot_id))
+    result = await db.execute(select(Lot).where(Lot.id == lot_id).with_for_update())
     lot = result.scalar_one_or_none()
     if not lot:
         logger.warning(f"Lot {lot_id} introuvable pour décrémentation")

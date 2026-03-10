@@ -140,10 +140,13 @@ async def check_clients_inactifs():
 
         for client in clients:
             if client.commandes:
-                dernier = max(c.date_commande for c in client.commandes
-                              if c.statut != StatutCommande.annulee)
+                dates = [c.date_commande for c in client.commandes
+                         if c.statut != StatutCommande.annulee and c.date_commande]
+                if not dates:
+                    continue
+                dernier = max(dates)
                 if dernier < seuil:
-                    logger.info(f"😴 Client inactif: {client.prenom} {client.nom}")
+                    logger.info(f"Client inactif: {client.prenom} {client.nom}")
                     await declencher_workflow_relance(client)
 
 

@@ -14,7 +14,7 @@ Système de gestion interne sur-mesure pour Kahlo Café, marque de café artisan
 | Cache + offline | Redis 7 | ~30MB |
 | Calendrier | Radicale (CalDAV) | ~30MB |
 | Proxy | Nginx | ~10MB |
-| **Total** | | **~290MB** |
+| **Total** | | **~520MB** |
 
 ---
 
@@ -115,7 +115,7 @@ Indicateur de sync visible en haut de l'interface.
 ./start.sh stop
 
 # Voir les logs
-docker-compose logs -f backend
+docker compose logs -f backend
 
 # Accéder à la base de données
 docker exec -it kahlo_db psql -U kahlo -d kahlo

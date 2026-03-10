@@ -4,6 +4,8 @@ import sib_api_v3_sdk
 from sib_api_v3_sdk.rest import ApiException
 import os
 import logging
+import asyncio
+from functools import partial
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +18,21 @@ def _get_contacts_api():
 
 def _get_transac_api():
     return sib_api_v3_sdk.TransactionalEmailsApi(sib_api_v3_sdk.ApiClient(configuration))
+
+
+_BREVO_LIST_CLIENTS = int(os.getenv("BREVO_LIST_CLIENTS", "3"))
+_BREVO_LIST_RELANCE = int(os.getenv("BREVO_LIST_RELANCE", "7"))
+_BREVO_TPL_ANNIVERSAIRE = int(os.getenv("BREVO_TPL_ANNIVERSAIRE", "1"))
+_BREVO_TPL_CONFIRMATION = int(os.getenv("BREVO_TPL_CONFIRMATION", "2"))
+_BREVO_TPL_PRETE = int(os.getenv("BREVO_TPL_PRETE", "3"))
+_BREVO_FROM_EMAIL = os.getenv("BREVO_FROM_EMAIL", "bonjour@kahlocafe.fr")
+_BREVO_FROM_NAME = os.getenv("BREVO_FROM_NAME", "Kahlo Café")
+
+
+async def _run_sync(func, *args, **kwargs):
+    """Exécute une fonction synchrone dans un thread pool."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, partial(func, *args, **kwargs))
 
 
 async def sync_client_brevo(client) -> str:
@@ -34,10 +51,10 @@ async def sync_client_brevo(client) -> str:
                 "TAMPONS": client.tampons,
                 "VIP": str(client.vip),
             },
-            list_ids=[3],  # Liste "Clients Kahlo Café"
+            list_ids=[_BREVO_LIST_CLIENTS],
             update_enabled=True
         )
-        result = api.create_contact(contact)
+        result = await _run_sync(api.create_contact, contact)
         logger.info(f"Contact Brevo sync: {client.email}")
         return str(result.id) if hasattr(result, "id") else ""
     except ApiException as e:
@@ -51,14 +68,14 @@ async def envoyer_email_anniversaire(client):
     try:
         email = sib_api_v3_sdk.SendSmtpEmail(
             to=[{"email": client.email, "name": f"{client.prenom} {client.nom}"}],
-            template_id=1,  # Template anniversaire dans Brevo
+            template_id=_BREVO_TPL_ANNIVERSAIRE,
             params={
                 "PRENOM": client.prenom,
                 "PROFIL": client.profil or "cliente fidèle",
             },
-            sender={"email": "bonjour@kahlocafe.fr", "name": "Kahlo Café"}
+            sender={"email": _BREVO_FROM_EMAIL, "name": _BREVO_FROM_NAME}
         )
-        api.send_transac_email(email)
+        await _run_sync(api.send_transac_email, email)
         logger.info(f"Email anniversaire envoyé à {client.email}")
     except ApiException as e:
         logger.error(f"Erreur envoi anniversaire: {e}")
@@ -72,16 +89,16 @@ async def notifier_client_paiement_recu(commande):
     try:
         email = sib_api_v3_sdk.SendSmtpEmail(
             to=[{"email": commande.client.email, "name": f"{commande.client.prenom}"}],
-            template_id=2,  # Template confirmation commande
+            template_id=_BREVO_TPL_CONFIRMATION,
             params={
                 "PRENOM": commande.client.prenom,
                 "NUMERO": commande.numero,
                 "MONTANT": commande.montant_total,
                 "MARCHE": "votre prochain marché",
             },
-            sender={"email": "bonjour@kahlocafe.fr", "name": "Kahlo Café"}
+            sender={"email": _BREVO_FROM_EMAIL, "name": _BREVO_FROM_NAME}
         )
-        api.send_transac_email(email)
+        await _run_sync(api.send_transac_email, email)
         logger.info(f"Confirmation commande envoyée: {commande.numero}")
     except ApiException as e:
         logger.error(f"Erreur notification paiement: {e}")
@@ -95,15 +112,15 @@ async def notifier_commande_prete(commande):
     try:
         email = sib_api_v3_sdk.SendSmtpEmail(
             to=[{"email": commande.client.email}],
-            template_id=3,  # Template "commande prête"
+            template_id=_BREVO_TPL_PRETE,
             params={
                 "PRENOM": commande.client.prenom,
                 "MARCHE": commande.marche.nom if commande.marche else "notre prochain marché",
                 "NUMERO": commande.numero,
             },
-            sender={"email": "bonjour@kahlocafe.fr", "name": "Kahlo Café"}
+            sender={"email": _BREVO_FROM_EMAIL, "name": _BREVO_FROM_NAME}
         )
-        api.send_transac_email(email)
+        await _run_sync(api.send_transac_email, email)
     except ApiException as e:
         logger.error(f"Erreur notification prête: {e}")
 
@@ -112,8 +129,11 @@ async def declencher_workflow_relance(client):
     """Lance le workflow de relance client inactif dans Brevo"""
     api = _get_contacts_api()
     try:
-        # Ajouter le client à la liste "Relance 45j"
-        api.add_contact_to_list(list_id=7, contacts_emails={"emails": [client.email]})
+        await _run_sync(
+            api.add_contact_to_list,
+            list_id=_BREVO_LIST_RELANCE,
+            contacts_emails={"emails": [client.email]}
+        )
         logger.info(f"Workflow relance déclenché: {client.email}")
     except ApiException as e:
         logger.error(f"Erreur workflow relance: {e}")

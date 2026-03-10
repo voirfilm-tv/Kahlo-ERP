@@ -7,14 +7,33 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from collections import defaultdict
 import os
 import logging
+import time
 
 from database import get_db
 from models import Utilisateur, RoleUtilisateur
 
 logger = logging.getLogger(__name__)
+
+# Rate limiting simple en mémoire pour /login
+_login_attempts: dict[str, list[float]] = defaultdict(list)
+_MAX_ATTEMPTS = 5
+_WINDOW_SECONDS = 300  # 5 minutes
+
+
+def _check_rate_limit(key: str):
+    """Lève HTTPException si trop de tentatives."""
+    now = time.time()
+    _login_attempts[key] = [t for t in _login_attempts[key] if now - t < _WINDOW_SECONDS]
+    if len(_login_attempts[key]) >= _MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=429,
+            detail="Trop de tentatives de connexion. Réessayez dans quelques minutes."
+        )
+    _login_attempts[key].append(now)
 
 router = APIRouter()
 security = HTTPBearer()
@@ -35,7 +54,17 @@ SESSION_HOURS = int(os.getenv("SESSION_HOURS", "8"))
 # Identifiants de fallback si aucun utilisateur en base
 _FALLBACK_USERNAME = os.getenv("APP_USERNAME", "kahlo")
 _password_hash_env = os.getenv("APP_PASSWORD_HASH", "")
-_FALLBACK_HASH = _password_hash_env or pwd_context.hash(os.getenv("APP_DEFAULT_PASSWORD", "kahlo2026"))
+if not _password_hash_env:
+    _default_pw = os.getenv("APP_DEFAULT_PASSWORD", "")
+    if not _default_pw:
+        logger.warning(
+            "APP_PASSWORD_HASH et APP_DEFAULT_PASSWORD non définis. "
+            "Configurez-les dans .env pour créer l'admin initial."
+        )
+        _default_pw = "changeme"
+    _FALLBACK_HASH = pwd_context.hash(_default_pw)
+else:
+    _FALLBACK_HASH = _password_hash_env
 
 
 class LoginData(BaseModel):
@@ -61,6 +90,7 @@ async def _init_admin_si_vide(db: AsyncSession):
 
 @router.post("/login")
 async def login(data: LoginData, db: AsyncSession = Depends(get_db)):
+    _check_rate_limit(data.username)
     await _init_admin_si_vide(db)
 
     result = await db.execute(
@@ -79,7 +109,7 @@ async def login(data: LoginData, db: AsyncSession = Depends(get_db)):
             "sub": user.username,
             "user_id": user.id,
             "role": user.role.value,
-            "exp": datetime.utcnow() + timedelta(hours=SESSION_HOURS),
+            "exp": datetime.now(timezone.utc) + timedelta(hours=SESSION_HOURS),
         },
         SECRET_KEY, algorithm=ALGORITHM
     )

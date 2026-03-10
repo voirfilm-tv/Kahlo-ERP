@@ -155,9 +155,12 @@ async def creer_commande(data: CommandeCreate, db: AsyncSession = Depends(get_db
     if not client:
         raise HTTPException(status_code=404, detail="Client introuvable")
 
-    # Vérifier les lots et le stock disponible
+    # Vérifier les lots et le stock disponible (avec verrouillage pour éviter les race conditions)
     for ligne in data.lignes:
-        lot = await db.get(Lot, ligne.lot_id)
+        result_lot = await db.execute(
+            select(Lot).where(Lot.id == ligne.lot_id).with_for_update()
+        )
+        lot = result_lot.scalar_one_or_none()
         if not lot:
             raise HTTPException(status_code=404, detail=f"Lot {ligne.lot_id} introuvable")
         if not lot.actif:
@@ -268,10 +271,7 @@ async def changer_statut(
         except Exception:
             pass
 
-        # Décrémenter stock si paiement espèces (SumUp le fait via webhook)
-        if commande.paiement_mode == "especes":
-            for ligne in commande.lignes:
-                await decrementer_stock(db, ligne.lot_id, ligne.poids_g / 1000)
+        # Stock déjà décrémenté : à la création pour espèces, via webhook pour SumUp
 
         # Tampon fidélité
         client = await db.get(Client, commande.client_id)
