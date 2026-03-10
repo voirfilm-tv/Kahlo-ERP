@@ -34,41 +34,46 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
-if ! command -v docker-compose &> /dev/null; then
+# Détecter Docker Compose (plugin ou standalone)
+if docker compose version &> /dev/null; then
+    DC="docker compose"
+elif command -v docker-compose &> /dev/null; then
+    DC="docker-compose"
+else
     echo -e "${RED}✗ Docker Compose non installé${NC}"
     exit 1
 fi
 
-echo -e "${GREEN}✓ Docker détecté${NC}"
+echo -e "${GREEN}✓ Docker détecté ($DC)${NC}"
 
 # Mode
 MODE=${1:-"dev"}
 
 if [ "$MODE" = "dev" ]; then
     echo -e "${YELLOW}→ Démarrage en mode développement...${NC}"
-    docker-compose up --build
+    $DC up --build
 
 elif [ "$MODE" = "prod" ]; then
     echo -e "${YELLOW}→ Démarrage en mode production...${NC}"
-    docker-compose up -d --build
+    $DC up -d --build
     echo ""
     echo -e "${GREEN}✅ Kahlo ERP démarré en arrière-plan${NC}"
     echo "   Frontend : http://localhost"
     echo "   API docs : http://localhost/api/docs"
     echo "   CalDAV   : http://localhost/caldav/"
     echo ""
-    echo "   Logs : docker-compose logs -f"
+    echo "   Logs : $DC logs -f"
 
 elif [ "$MODE" = "stop" ]; then
     echo -e "${YELLOW}→ Arrêt des services...${NC}"
-    docker-compose down
+    $DC down
     echo -e "${GREEN}✅ Services arrêtés${NC}"
 
 elif [ "$MODE" = "reset" ]; then
     echo -e "${RED}⚠  Suppression de toutes les données !${NC}"
     read -p "Confirmer ? (oui/non) : " confirm
     if [ "$confirm" = "oui" ]; then
-        docker-compose down -v
+        $DC down -v
         echo -e "${GREEN}✅ Reset complet effectué${NC}"
     fi
 

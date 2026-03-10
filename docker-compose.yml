@@ -62,11 +62,11 @@ services:
   #  RAM : ~120MB
   # ----------------------------------------------------------
   backend:
-    image: python:3.12-slim
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: kahlo_backend
     restart: unless-stopped
-    working_dir: /app
-    command: ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       DATABASE_URL: postgresql://kahlo:${POSTGRES_PASSWORD}@db:5432/kahlo
       REDIS_URL: redis://redis:6379
@@ -83,16 +83,13 @@ services:
       APP_PASSWORD_HASH: ${APP_PASSWORD_HASH:-}
       SESSION_HOURS: ${SESSION_HOURS:-8}
       CALDAV_BASE_URL: http://caldav:5232
-      PYTHONPATH: /host-packages
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
-      - ./backend:/app
       - uploads_data:/app/uploads
-      - /opt/kahlo-deps:/host-packages:ro
     deploy:
       resources:
         limits:
@@ -124,8 +121,6 @@ services:
       dockerfile: Dockerfile
     container_name: kahlo_frontend
     restart: unless-stopped
-    depends_on:
-      - backend
     deploy:
       resources:
         limits:
