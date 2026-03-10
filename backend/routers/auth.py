@@ -35,7 +35,17 @@ SESSION_HOURS = int(os.getenv("SESSION_HOURS", "8"))
 # Identifiants de fallback si aucun utilisateur en base
 _FALLBACK_USERNAME = os.getenv("APP_USERNAME", "kahlo")
 _password_hash_env = os.getenv("APP_PASSWORD_HASH", "")
-_FALLBACK_HASH = _password_hash_env or pwd_context.hash(os.getenv("APP_DEFAULT_PASSWORD", "kahlo2026"))
+if not _password_hash_env:
+    _default_pw = os.getenv("APP_DEFAULT_PASSWORD", "")
+    if not _default_pw:
+        logger.warning(
+            "APP_PASSWORD_HASH et APP_DEFAULT_PASSWORD non définis. "
+            "Configurez-les dans .env pour créer l'admin initial."
+        )
+        _default_pw = "changeme"
+    _FALLBACK_HASH = pwd_context.hash(_default_pw)
+else:
+    _FALLBACK_HASH = _password_hash_env
 
 
 class LoginData(BaseModel):

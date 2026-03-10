@@ -14,7 +14,7 @@ Système de gestion interne sur-mesure pour Kahlo Café, marque de café artisan
 | Cache + offline | Redis 7 | ~30MB |
 | Calendrier | Radicale (CalDAV) | ~30MB |
 | Proxy | Nginx | ~10MB |
-| **Total** | | **~290MB** |
+| **Total** | | **~520MB** |
 
 ---
 

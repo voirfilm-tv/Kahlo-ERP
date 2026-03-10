@@ -225,7 +225,6 @@ class Commande(Base):
     updated_at      = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     client  = relationship("Client", back_populates="commandes")
-    marche  = Column(Integer, ForeignKey("marches.id"))
     lignes  = relationship("LigneCommande", back_populates="commande")
 
 
