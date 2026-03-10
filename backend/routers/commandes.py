@@ -317,8 +317,8 @@ async def notifier_prete(commande_id: int, db: AsyncSession = Depends(get_db), t
     try:
         await notifier_commande_prete(commande)
         return {"message": "Notification envoyée"}
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Erreur Brevo : {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=502, detail="Erreur lors de l'envoi de la notification")
 
 
 @router.post("/{commande_id}/checkout-sumup")
@@ -345,8 +345,8 @@ async def creer_lien_sumup(commande_id: int, db: AsyncSession = Depends(get_db),
         commande.sumup_checkout_id = checkout["checkout_id"]
         await db.commit()
         return checkout
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Erreur SumUp : {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=502, detail="Erreur lors de la création du checkout SumUp")
 
 
 @router.get("/{commande_id}/statut-paiement")

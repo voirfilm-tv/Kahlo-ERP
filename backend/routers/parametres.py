@@ -17,7 +17,7 @@ from dotenv import dotenv_values, set_key
 
 logger = logging.getLogger(__name__)
 
-from routers.auth import verifier_token
+from routers.auth import verifier_token, require_admin
 
 router = APIRouter()
 
@@ -247,7 +247,7 @@ async def get_parametres(token: str = Depends(verifier_token)):
 @router.post("/")
 async def sauvegarder_parametres(
     data: TousParametres,
-    token: str = Depends(verifier_token)
+    admin: dict = Depends(require_admin)
 ):
     """
     Sauvegarde les paramètres dans le .env.
@@ -341,9 +341,11 @@ async def sauvegarder_parametres(
         s = data.securite
         w("APP_USERNAME", s.username)
         if s.new_password and not _est_vide_ou_masque(s.new_password):
-            import bcrypt
-            hashed = bcrypt.hashpw(s.new_password.encode(), bcrypt.gensalt()).decode()
-            _ecrire_cle("APP_PASSWORD_HASH", hashed)
+            if len(s.new_password) < 8:
+                raise HTTPException(status_code=400, detail="Le mot de passe doit faire au moins 8 caractères")
+            # Écrire le mot de passe en clair dans APP_DEFAULT_PASSWORD
+            # (pas le hash, car Docker Compose casse les $ dans les hashes bcrypt)
+            _ecrire_cle("APP_DEFAULT_PASSWORD", s.new_password)
         if s.secret_key and not _est_vide_ou_masque(s.secret_key):
             w("SECRET_KEY", s.secret_key)
         wb("SESSION_LONGUE", s.session_longue)
@@ -390,8 +392,9 @@ async def tester_brevo(token: str = Depends(verifier_token)):
             raise HTTPException(status_code=502, detail="Clé Brevo invalide")
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Erreur Brevo : {str(e)}")
+    except Exception:
+        logger.exception("Erreur lors du test Brevo")
+        raise HTTPException(status_code=502, detail="Impossible de joindre Brevo — vérifiez votre configuration")
 
 
 @router.post("/tester-gemini")
@@ -413,8 +416,9 @@ async def tester_gemini(token: str = Depends(verifier_token)):
             raise HTTPException(status_code=502, detail="Clé Gemini invalide ou quota dépassé")
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Erreur Gemini : {str(e)}")
+    except Exception:
+        logger.exception("Erreur lors du test Gemini")
+        raise HTTPException(status_code=502, detail="Impossible de joindre Gemini — vérifiez votre configuration")
 
 
 # ============================================================
@@ -422,7 +426,7 @@ async def tester_gemini(token: str = Depends(verifier_token)):
 # ============================================================
 
 @router.post("/sauvegarde")
-async def sauvegarde_manuelle(token: str = Depends(verifier_token)):
+async def sauvegarde_manuelle(admin: dict = Depends(require_admin)):
     """Lance un dump PostgreSQL immédiat"""
     import subprocess
     backup_path = os.getenv("BACKUP_PATH", "/backups/kahlo")
@@ -449,8 +453,8 @@ async def sauvegarde_manuelle(token: str = Depends(verifier_token)):
     )
 
     if result.returncode != 0:
-        logger.error(f"pg_dump echoue: {result.stderr.decode()}")
-        raise HTTPException(status_code=500, detail="Erreur lors de la sauvegarde de la base de donnees")
+        logger.error("pg_dump echoue (code %d)", result.returncode)
+        raise HTTPException(status_code=500, detail="Erreur lors de la sauvegarde de la base de données")
 
     with open(fichier, "wb") as f:
         f.write(result.stdout)
