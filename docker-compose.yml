@@ -118,6 +118,11 @@ services:
   #  RAM : ~30MB
   # ----------------------------------------------------------
   caldav:
+    # Image communautaire — pinned par tag.
+    # Pour pinner par digest (recommandé en prod), remplacer par :
+    #   image: tomsquest/docker-radicale@sha256:<digest>
+    # Si l'image disparaît de Docker Hub, basculer sur le build local :
+    #   build: ./caldav
     image: tomsquest/docker-radicale:3.3.3.1
     container_name: kahlo_caldav
     restart: unless-stopped

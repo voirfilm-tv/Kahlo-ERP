@@ -2,9 +2,12 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Dépendances système : pg_dump (sauvegarde), curl (healthcheck)
+# Dépendances système : pg_dump (sauvegarde), curl (healthcheck),
+# fonts-liberation + pango (WeasyPrint PDF avec typographie correcte)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends postgresql-client curl && \
+    apt-get install -y --no-install-recommends \
+        postgresql-client curl \
+        fonts-liberation libpango-1.0-0 libpangoft2-1.0-0 && \
     rm -rf /var/lib/apt/lists/*
 
 # Dépendances Python
