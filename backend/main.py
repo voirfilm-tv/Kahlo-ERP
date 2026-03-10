@@ -6,6 +6,7 @@ FastAPI — Point d'entrée principal
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import os
 
 from database import engine, Base
 from routers import (
@@ -34,9 +35,10 @@ app = FastAPI(
 )
 
 # CORS — autoriser le frontend
+_cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,https://erp.kahlocafe.fr")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://erp.kahlocafe.fr"],
+    allow_origins=[o.strip() for o in _cors_origins.split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

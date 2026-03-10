@@ -6,6 +6,7 @@ WeasyPrint : HTML → PDF avec style Kahlo
 import os
 import asyncio
 from datetime import datetime
+from html import escape as html_escape
 from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -38,21 +39,21 @@ def _html_facture(commande, client, lignes_enrichies: list) -> str:
     lignes_html = ""
     for l in lignes_enrichies:
         poids_label = f"{l['poids_g']}g"
-        mouture_label = MOUTURES_LABELS.get(l['mouture'], l['mouture'])
+        mouture_label = MOUTURES_LABELS.get(l['mouture'], html_escape(str(l['mouture'])))
         lignes_html += f"""
         <tr>
-            <td>{l['origine']}</td>
+            <td>{html_escape(str(l['origine']))}</td>
             <td>{poids_label}</td>
-            <td>{mouture_label}</td>
+            <td>{html_escape(mouture_label)}</td>
             <td style="text-align:right;">{l['prix_unitaire']:.2f} €</td>
         </tr>"""
 
-    client_nom = f"{client.prenom} {client.nom}" if client else "Client"
+    client_nom = html_escape(f"{client.prenom} {client.nom}") if client else "Client"
     client_info = ""
     if client:
-        if client.email:    client_info += f"<div>{client.email}</div>"
-        if client.telephone: client_info += f"<div>{client.telephone}</div>"
-        if client.ville:    client_info += f"<div>{client.ville}</div>"
+        if client.email:    client_info += f"<div>{html_escape(client.email)}</div>"
+        if client.telephone: client_info += f"<div>{html_escape(client.telephone)}</div>"
+        if client.ville:    client_info += f"<div>{html_escape(client.ville)}</div>"
 
     siret_line = f"<p>SIRET : {MARQUE['siret']}</p>" if MARQUE['siret'] else ""
 

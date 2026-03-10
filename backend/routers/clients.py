@@ -88,6 +88,8 @@ async def get_clients(
     search: Optional[str] = Query(None, max_length=100),
     vip: Optional[bool] = Query(None),
     profil: Optional[ProfilKahlo] = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     token: str = Depends(verifier_token)
 ):
@@ -108,6 +110,8 @@ async def get_clients(
         query = query.where(Client.vip == vip)
     if profil:
         query = query.where(Client.profil == profil)
+
+    query = query.offset(offset).limit(limit)
 
     result = await db.execute(query)
     clients = result.scalars().all()

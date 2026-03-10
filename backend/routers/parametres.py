@@ -432,20 +432,20 @@ async def sauvegarde_manuelle(token: str = Depends(verifier_token)):
     db_url = os.getenv("DATABASE_URL", "")
 
     # Extraire les infos de connexion depuis la DATABASE_URL
-    # Format: postgresql+asyncpg://user:password@host:port/dbname
-    m = re.match(r"postgresql\+asyncpg://([^:]+):([^@]+)@([^:/]+):?(\d*)/(.+)", db_url)
+    # Formats supportés : postgresql://... ou postgresql+asyncpg://...
+    m = re.match(r"postgresql(?:\+\w+)?://([^:]+):([^@]+)@([^:/]+):?(\d*)/([^?]+)", db_url)
     if not m:
         raise HTTPException(status_code=500, detail="DATABASE_URL malformée — impossible de sauvegarder")
 
     user, password, host, port, dbname = m.groups()
     port = port or "5432"
 
-    env = os.environ.copy()
-    env["PGPASSWORD"] = password
+    env_copy = os.environ.copy()
+    env_copy["PGPASSWORD"] = password
 
     result = subprocess.run(
         ["pg_dump", "-h", host, "-p", port, "-U", user, "-d", dbname, "-Fc"],
-        capture_output=True, env=env
+        capture_output=True, env=env_copy, timeout=120
     )
 
     if result.returncode != 0:

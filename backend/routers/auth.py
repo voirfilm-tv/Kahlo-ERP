@@ -7,14 +7,33 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from collections import defaultdict
 import os
 import logging
+import time
 
 from database import get_db
 from models import Utilisateur, RoleUtilisateur
 
 logger = logging.getLogger(__name__)
+
+# Rate limiting simple en mémoire pour /login
+_login_attempts: dict[str, list[float]] = defaultdict(list)
+_MAX_ATTEMPTS = 5
+_WINDOW_SECONDS = 300  # 5 minutes
+
+
+def _check_rate_limit(key: str):
+    """Lève HTTPException si trop de tentatives."""
+    now = time.time()
+    _login_attempts[key] = [t for t in _login_attempts[key] if now - t < _WINDOW_SECONDS]
+    if len(_login_attempts[key]) >= _MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=429,
+            detail="Trop de tentatives de connexion. Réessayez dans quelques minutes."
+        )
+    _login_attempts[key].append(now)
 
 router = APIRouter()
 security = HTTPBearer()
@@ -71,6 +90,7 @@ async def _init_admin_si_vide(db: AsyncSession):
 
 @router.post("/login")
 async def login(data: LoginData, db: AsyncSession = Depends(get_db)):
+    _check_rate_limit(data.username)
     await _init_admin_si_vide(db)
 
     result = await db.execute(
@@ -89,7 +109,7 @@ async def login(data: LoginData, db: AsyncSession = Depends(get_db)):
             "sub": user.username,
             "user_id": user.id,
             "role": user.role.value,
-            "exp": datetime.utcnow() + timedelta(hours=SESSION_HOURS),
+            "exp": datetime.now(timezone.utc) + timedelta(hours=SESSION_HOURS),
         },
         SECRET_KEY, algorithm=ALGORITHM
     )
