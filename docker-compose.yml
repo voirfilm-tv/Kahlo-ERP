@@ -92,6 +92,8 @@ services:
       BREVO_TPL_CONFIRMATION: ${BREVO_TPL_CONFIRMATION:-2}
       BREVO_TPL_PRETE: ${BREVO_TPL_PRETE:-3}
       CALDAV_BASE_URL: http://caldav:5232
+      CALDAV_USER: ${CALDAV_USER:-kahlo}
+      CALDAV_PASSWORD: ${CALDAV_PASSWORD:-changeme}
     depends_on:
       db:
         condition: service_healthy
@@ -99,8 +101,9 @@ services:
         condition: service_healthy
     volumes:
       - uploads_data:/app/uploads
+      - factures_data:/app/factures
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -118,11 +121,16 @@ services:
     image: tomsquest/docker-radicale:3.3.3.1
     container_name: kahlo_caldav
     restart: unless-stopped
+    environment:
+      CALDAV_USER: ${CALDAV_USER:-kahlo}
+      CALDAV_PASSWORD: ${CALDAV_PASSWORD:-changeme}
+    entrypoint: ["/bin/sh", "/etc/radicale/init.sh"]
     volumes:
       - caldav_data:/data
       - ./nginx/radicale.conf:/etc/radicale/config:ro
+      - ./nginx/radicale-init.sh:/etc/radicale/init.sh:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5232/.web/"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:5232/.web/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -184,6 +192,7 @@ volumes:
   redis_data:
   caldav_data:
   uploads_data:
+  factures_data:
 
 networks:
   default:

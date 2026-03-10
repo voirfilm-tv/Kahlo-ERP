@@ -8,20 +8,55 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
 
-from database import engine, Base
+from database import engine, Base, AsyncSessionLocal
 from routers import (
     auth, stock, fournisseurs, clients, commandes,
     marches, calendrier, analytics, webhooks, ia, parametres,
     utilisateurs
 )
 from services.scheduler import start_scheduler
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+async def _seed_fournisseurs():
+    """Insère les fournisseurs de départ s'il n'en existe aucun."""
+    from sqlalchemy import select, text
+    from models import Fournisseur
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(Fournisseur).limit(1))
+        if result.scalars().first() is not None:
+            return
+
+        seed = [
+            Fournisseur(nom="Café Imports Lyon", email="contact@cafeimports-lyon.fr", pays="France", delai_moyen=5, score=4.5),
+            Fournisseur(nom="Origine Direct", email="hello@origine-direct.com", pays="France", delai_moyen=7, score=4.8),
+            Fournisseur(nom="Terra Coffee", email="pro@terracoffee.eu", pays="Belgique", delai_moyen=10, score=4.2),
+        ]
+        db.add_all(seed)
+        await db.commit()
+
+        # Créer les index de performance (idem init.sql mais après CREATE TABLE)
+        async with engine.begin() as conn:
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_lots_origine ON lots(origine)"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_lots_actif ON lots(actif)"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_commandes_statut ON commandes(statut)"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_commandes_date ON commandes(date_commande)"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email)"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_evenements_date ON evenements(date_debut)"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_marches_date ON marches(date)"))
+
+        logger.info("Données initiales insérées (fournisseurs + index)")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
+    # Startup : créer les tables puis seeder
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await _seed_fournisseurs()
     start_scheduler()
     yield
     # Shutdown
