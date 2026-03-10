@@ -26,11 +26,22 @@ logger = logging.getLogger(__name__)
 _login_attempts: dict[str, list[float]] = defaultdict(list)
 _MAX_ATTEMPTS = int(os.getenv("LOGIN_MAX_ATTEMPTS", "5"))
 _WINDOW_SECONDS = int(os.getenv("LOGIN_WINDOW_SECONDS", "300"))
+_MAX_TRACKED_KEYS = 10_000  # Empêcher le memory leak si attaque par usernames aléatoires
 
 
 def _check_rate_limit(key: str):
     """Lève HTTPException si trop de tentatives."""
     now = time.time()
+
+    # Nettoyage périodique : si trop de clés trackées, purger les anciennes
+    if len(_login_attempts) > _MAX_TRACKED_KEYS:
+        stale_keys = [
+            k for k, v in _login_attempts.items()
+            if not v or (now - max(v)) > _WINDOW_SECONDS
+        ]
+        for k in stale_keys:
+            del _login_attempts[k]
+
     _login_attempts[key] = [t for t in _login_attempts[key] if now - t < _WINDOW_SECONDS]
     if len(_login_attempts[key]) >= _MAX_ATTEMPTS:
         raise HTTPException(
@@ -49,16 +60,17 @@ security = HTTPBearer()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # SECRET_KEY : utilisée pour signer les JWT
-# En dev sans .env → clé temporaire (sessions perdues au restart, mais pas de crash)
+# En dev sans .env → clé auto-générée et persistée dans .env
 # En prod → DOIT être dans .env
 SECRET_KEY = os.getenv("SECRET_KEY", "")
 _INSECURE_SECRETS = {"", "dev_key", "dev-secret-key-change-in-production", "changeme"}
+_SECRET_KEY_WAS_GENERATED = False
 if SECRET_KEY in _INSECURE_SECRETS:
     SECRET_KEY = _secrets.token_hex(32)
+    _SECRET_KEY_WAS_GENERATED = True
     logger.warning(
-        "SECRET_KEY non configuree ou insecure — cle temporaire generee. "
-        "Les sessions seront perdues au redemarrage. "
-        "Configurez SECRET_KEY dans .env pour la production."
+        "SECRET_KEY non configuree ou insecure — cle generee automatiquement. "
+        "Elle sera persistee dans .env au demarrage."
     )
 
 ALGORITHM = "HS256"
@@ -108,6 +120,41 @@ def _resolve_admin_password_hash() -> str:
 
 
 _ADMIN_HASH = _resolve_admin_password_hash()
+
+# Détection du mot de passe par défaut "changeme"
+_USING_DEFAULT_PASSWORD = (
+    not os.getenv("APP_PASSWORD_HASH", "")
+    and os.getenv("APP_DEFAULT_PASSWORD", "changeme") == "changeme"
+)
+if _USING_DEFAULT_PASSWORD:
+    logger.warning(
+        "SECURITE: Le mot de passe admin est toujours 'changeme'. "
+        "Changez-le via l'interface ou dans .env (APP_DEFAULT_PASSWORD)."
+    )
+
+
+def persist_secret_key_if_needed():
+    """Persiste la SECRET_KEY auto-générée dans le fichier .env.
+
+    Appelée au startup depuis main.py pour éviter de perdre les sessions au restart.
+    """
+    if not _SECRET_KEY_WAS_GENERATED:
+        return
+
+    from pathlib import Path
+    env_path = Path(os.getenv("ENV_FILE_PATH", "/app/.env"))
+    try:
+        if not env_path.exists():
+            env_path.touch(mode=0o600)
+
+        from dotenv import set_key
+        set_key(str(env_path), "SECRET_KEY", SECRET_KEY)
+        logger.info("SECRET_KEY generee et persistee dans %s", env_path)
+    except Exception:
+        logger.warning(
+            "Impossible de persister SECRET_KEY dans %s. "
+            "Les sessions seront perdues au redemarrage.", env_path
+        )
 
 
 async def _init_admin_si_vide(db: AsyncSession):

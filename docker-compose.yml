@@ -78,10 +78,11 @@ services:
       BREVO_API_KEY: ${BREVO_API_KEY}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      SECRET_KEY: ${SECRET_KEY}
+      SECRET_KEY: ${SECRET_KEY:-}
       APP_USERNAME: ${APP_USERNAME:-kahlo}
-      APP_PASSWORD_HASH: ${APP_PASSWORD_HASH:-}
+      # NE PAS utiliser APP_PASSWORD_HASH avec Docker Compose (les $ cassent les hashes bcrypt)
       APP_DEFAULT_PASSWORD: ${APP_DEFAULT_PASSWORD:-changeme}
+      ADMIN_FORCE_RESET: ${ADMIN_FORCE_RESET:-false}
       SESSION_HOURS: ${SESSION_HOURS:-8}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,https://erp.kahlocafe.fr}
       BREVO_FROM_EMAIL: ${BREVO_FROM_EMAIL:-bonjour@kahlocafe.fr}
