@@ -56,15 +56,20 @@ export default function Stock() {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-thumb { background: ${C.prune}; border-radius: 2px; }
-        .card { background: ${C.card}; border: 1px solid rgba(193,138,74,0.12); border-radius: 16px; }
-        .inp { background: rgba(0,0,0,0.3); border: 1px solid rgba(193,138,74,0.15); border-radius: 10px; padding: 9px 14px; color: ${C.creme}; font-family: 'Outfit',sans-serif; font-size: 13px; outline: none; width: 100%; }
-        .btn-p { background: linear-gradient(135deg,${C.prune},${C.gold}); border: none; border-radius: 10px; padding: 10px 20px; color: white; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'Outfit',sans-serif; }
-        .btn-g { background: rgba(193,138,74,0.08); border: 1px solid rgba(193,138,74,0.2); border-radius: 10px; padding: 8px 16px; color: ${C.gold}; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'Outfit',sans-serif; }
+        .card { background: rgba(46,26,16,0.55); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); border: 1px solid rgba(193,138,74,0.12); border-radius: 18px; box-shadow: 0 4px 24px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.04); transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        .card:hover { transform: translateY(-1px); box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06); }
+        .inp { background: rgba(0,0,0,0.25); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(193,138,74,0.15); border-radius: 12px; padding: 10px 14px; color: ${C.creme}; font-family: 'Outfit',sans-serif; font-size: 13px; outline: none; width: 100%; box-shadow: inset 0 1px 0 rgba(255,255,255,0.03); transition: border-color 0.2s, box-shadow 0.2s; }
+        .inp:focus { border-color: rgba(193,138,74,0.4); box-shadow: 0 0 0 3px rgba(193,138,74,0.08), inset 0 1px 0 rgba(255,255,255,0.03); }
+        .btn-p { background: linear-gradient(135deg,${C.prune},${C.gold}); border: none; border-radius: 12px; padding: 10px 20px; color: white; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'Outfit',sans-serif; box-shadow: 0 4px 16px rgba(107,63,87,0.3), inset 0 1px 0 rgba(255,255,255,0.15); transition: all 0.25s ease; }
+        .btn-p:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(107,63,87,0.4), inset 0 1px 0 rgba(255,255,255,0.2); }
+        .btn-g { background: rgba(193,138,74,0.06); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(193,138,74,0.15); border-radius: 12px; padding: 8px 16px; color: ${C.gold}; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'Outfit',sans-serif; box-shadow: inset 0 1px 0 rgba(255,255,255,0.03); transition: all 0.2s ease; }
+        .btn-g:hover { background: rgba(193,138,74,0.12); border-color: rgba(193,138,74,0.3); }
         .lot-row { display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-bottom: 1px solid rgba(223,207,196,0.05); cursor: pointer; transition: background 0.15s; }
         .lot-row:hover { background: rgba(193,138,74,0.04); }
         .lot-row.active { background: rgba(193,138,74,0.08); border-left: 2px solid ${C.gold}; }
-        .tab-a { padding: 7px 16px; border-radius: 8px; font-size: 12px; font-weight: 500; cursor: pointer; border: none; font-family: 'Outfit',sans-serif; background: rgba(193,138,74,0.15); color: ${C.gold}; }
-        .tab-i { padding: 7px 16px; border-radius: 8px; font-size: 12px; font-weight: 500; cursor: pointer; border: none; font-family: 'Outfit',sans-serif; background: transparent; color: rgba(223,207,196,0.4); }
+        .tab-a { padding: 7px 16px; border-radius: 10px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid rgba(193,138,74,0.2); font-family: 'Outfit',sans-serif; background: rgba(193,138,74,0.12); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: ${C.gold}; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); transition: all 0.2s; }
+        .tab-i { padding: 7px 16px; border-radius: 10px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid transparent; font-family: 'Outfit',sans-serif; background: transparent; color: rgba(223,207,196,0.4); transition: all 0.2s; }
+        .tab-i:hover { background: rgba(193,138,74,0.05); }
       `}</style>
 
       <div style={{ padding: "32px 28px", fontFamily: "'Outfit', sans-serif", color: C.creme, marginRight: selected ? 360 : 0, transition: "margin-right 0.3s" }}>

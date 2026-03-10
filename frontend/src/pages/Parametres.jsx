@@ -61,10 +61,15 @@ function Input({ value, onChange, placeholder, type = "text", monospace }) {
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
       style={{
-        background: "rgba(0,0,0,0.3)", border: `1px solid rgba(193,138,74,0.15)`,
-        borderRadius: 10, padding: "10px 14px", color: C.creme, width: "100%",
+        background: "rgba(0,0,0,0.25)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+        border: `1px solid rgba(193,138,74,0.15)`,
+        borderRadius: 12, padding: "10px 14px", color: C.creme, width: "100%",
         fontFamily: monospace ? "monospace" : "'Outfit', sans-serif",
         fontSize: monospace ? 12 : 13, outline: "none",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+        transition: "border-color 0.2s, box-shadow 0.2s",
       }}
     />
   );
@@ -81,8 +86,10 @@ function Toggle({ value, onChange, label, sub }) {
         onClick={() => onChange(!value)}
         style={{
           width: 44, height: 24, borderRadius: 12, cursor: "pointer", transition: "all 0.25s",
-          background: value ? `linear-gradient(135deg, ${C.prune}, ${C.gold})` : "rgba(255,255,255,0.08)",
+          background: value ? `linear-gradient(135deg, ${C.prune}, ${C.gold})` : "rgba(255,255,255,0.06)",
           position: "relative", flexShrink: 0,
+          boxShadow: value ? "0 2px 8px rgba(107,63,87,0.3), inset 0 1px 0 rgba(255,255,255,0.1)" : "inset 0 1px 2px rgba(0,0,0,0.2)",
+          border: value ? "1px solid rgba(193,138,74,0.2)" : "1px solid rgba(255,255,255,0.06)",
         }}
       >
         <div style={{
@@ -113,9 +120,13 @@ function SaveBar({ dirty, onSave, onReset }) {
   return (
     <div style={{
       position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
-      background: C.espresso, border: `1px solid rgba(193,138,74,0.3)`,
-      borderRadius: 14, padding: "12px 20px", display: "flex", alignItems: "center",
-      gap: 14, zIndex: 999, boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+      background: "rgba(38,24,16,0.7)",
+      backdropFilter: "blur(24px) saturate(180%)",
+      WebkitBackdropFilter: "blur(24px) saturate(180%)",
+      border: `1px solid rgba(193,138,74,0.25)`,
+      borderRadius: 16, padding: "12px 20px", display: "flex", alignItems: "center",
+      gap: 14, zIndex: 999,
+      boxShadow: "0 8px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06)",
     }}>
       <span style={{ fontSize: 13, color: "rgba(223,207,196,0.6)" }}>Modifications non sauvegardées</span>
       <button onClick={onReset} style={{ background: "transparent", border: `1px solid rgba(223,207,196,0.2)`, borderRadius: 8, padding: "7px 16px", color: "rgba(223,207,196,0.5)", fontSize: 12, cursor: "pointer", fontFamily: "'Outfit', sans-serif" }}>Annuler</button>
@@ -1038,13 +1049,18 @@ export default function KahloParametres() {
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-thumb { background: ${C.prune}; border-radius: 2px; }
         input::placeholder { color: rgba(223,207,196,0.2); }
+        input:focus, select:focus, textarea:focus {
+          outline: none;
+          border-color: rgba(193,138,74,0.35) !important;
+          box-shadow: 0 0 0 3px rgba(193,138,74,0.1), inset 0 1px 2px rgba(0,0,0,0.2) !important;
+        }
         select option { background: ${C.espresso}; }
         a { text-decoration: none; }
         a:hover { text-decoration: underline; }
       `}</style>
 
       {/* Sidebar principale ERP */}
-      <div style={{ width: 220, background: C.espresso, borderRight: `1px solid rgba(193,138,74,0.1)`, display: "flex", flexDirection: "column", padding: "24px 12px", position: "fixed", height: "100vh", zIndex: 10 }}>
+      <div style={{ width: 220, background: "rgba(38,24,16,0.65)", backdropFilter: "blur(24px) saturate(180%)", WebkitBackdropFilter: "blur(24px) saturate(180%)", borderRight: `1px solid rgba(193,138,74,0.12)`, boxShadow: "inset -1px 0 0 rgba(255,255,255,0.03), 4px 0 24px rgba(0,0,0,0.3)", display: "flex", flexDirection: "column", padding: "24px 12px", position: "fixed", height: "100vh", zIndex: 10 }}>
         <div style={{ padding: "0 8px 28px", borderBottom: `1px solid rgba(193,138,74,0.1)`, marginBottom: 20 }}>
           <div style={{ fontFamily: "'Raleway', sans-serif", fontWeight: 900, fontSize: 20, color: C.gold, letterSpacing: 1 }}>KAHLO</div>
           <div style={{ fontFamily: "'Raleway', sans-serif", fontWeight: 300, fontSize: 11, color: C.rose, letterSpacing: 4, marginTop: 1 }}>CAFÉ · ERP</div>
@@ -1064,7 +1080,7 @@ export default function KahloParametres() {
       </div>
 
       {/* Sidebar paramètres */}
-      <div style={{ width: 210, background: "#231209", borderRight: `1px solid rgba(193,138,74,0.08)`, position: "fixed", left: 220, height: "100vh", padding: "32px 14px", overflowY: "auto", zIndex: 9 }}>
+      <div style={{ width: 210, background: "rgba(35,18,9,0.6)", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", borderRight: `1px solid rgba(193,138,74,0.08)`, boxShadow: "inset -1px 0 0 rgba(255,255,255,0.02), 2px 0 16px rgba(0,0,0,0.2)", position: "fixed", left: 220, height: "100vh", padding: "32px 14px", overflowY: "auto", zIndex: 9 }}>
         <div style={{ fontSize: 10, color: "rgba(223,207,196,0.25)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 16, padding: "0 6px" }}>Paramètres</div>
         {SECTIONS.map(s => (
           <div
@@ -1073,10 +1089,12 @@ export default function KahloParametres() {
             style={{
               display: "flex", alignItems: "center", gap: 10, padding: "10px 14px",
               borderRadius: 10, cursor: "pointer", fontSize: 13, fontWeight: 500,
-              marginBottom: 2, transition: "all 0.15s",
+              marginBottom: 2, transition: "all 0.2s ease",
               color: active === s.id ? C.gold : "rgba(223,207,196,0.45)",
-              background: active === s.id ? "rgba(193,138,74,0.1)" : "transparent",
+              background: active === s.id ? "rgba(193,138,74,0.15)" : "transparent",
+              backdropFilter: active === s.id ? "blur(8px)" : "none",
               borderLeft: active === s.id ? `2px solid ${C.gold}` : "2px solid transparent",
+              boxShadow: active === s.id ? "inset 0 1px 0 rgba(255,255,255,0.04), 0 2px 8px rgba(0,0,0,0.15)" : "none",
             }}
           >
             <span style={{ fontSize: 13 }}>{s.icon}</span>{s.label}

@@ -72,7 +72,19 @@ export default function Dashboard() {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-thumb { background: ${C.prune}; border-radius: 2px; }
-        .card { background: ${C.card}; border: 1px solid rgba(193,138,74,0.12); border-radius: 16px; }
+        .card {
+          background: rgba(46,26,16,0.55);
+          backdrop-filter: blur(20px) saturate(180%);
+          -webkit-backdrop-filter: blur(20px) saturate(180%);
+          border: 1px solid rgba(193,138,74,0.12);
+          border-radius: 18px;
+          box-shadow: 0 4px 24px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.04);
+          transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .card:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06);
+        }
       `}</style>
 
       <div style={{ padding: "32px 28px", fontFamily: "'Outfit', sans-serif", color: C.creme }}>
@@ -97,7 +109,7 @@ export default function Dashboard() {
 
         {/* Bloc IA */}
         {showIA && (
-          <div style={{ background: `linear-gradient(135deg, rgba(107,63,87,0.25), rgba(193,138,74,0.08))`, border: `1px solid rgba(193,138,74,0.2)`, borderRadius: 14, padding: "16px 20px", marginBottom: 24, display: "flex", gap: 14 }}>
+          <div style={{ background: `linear-gradient(135deg, rgba(107,63,87,0.2), rgba(193,138,74,0.06))`, backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", border: `1px solid rgba(193,138,74,0.2)`, borderRadius: 18, padding: "16px 20px", marginBottom: 24, display: "flex", gap: 14, boxShadow: "0 4px 24px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.05)" }}>
             <div style={{ width: 32, height: 32, borderRadius: "50%", background: `linear-gradient(135deg, ${C.prune}, ${C.gold})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>✦</div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: C.gold, marginBottom: 6 }}>Analyse Gemini</div>
