@@ -229,6 +229,12 @@ async def supprimer_utilisateur(
 #  GESTION DOMAINES (admin only)
 # ============================================================
 
+import re as _re
+
+# Regex stricte pour les noms de domaine (RFC 1035)
+_DOMAIN_RE = _re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)(\.[a-z0-9-]{1,63})*\.[a-z]{2,}$")
+
+
 def _verifier_dns(domaine: str, valeur_attendue: str) -> dict:
     """Vérifie les enregistrements DNS d'un domaine."""
     result = {
@@ -239,6 +245,11 @@ def _verifier_dns(domaine: str, valeur_attendue: str) -> dict:
         "type_enregistrement": None,
         "erreur": None,
     }
+
+    # Validation stricte du domaine avant toute opération réseau/subprocess
+    if not _DOMAIN_RE.match(domaine):
+        result["erreur"] = "Nom de domaine invalide"
+        return result
 
     try:
         # Vérifier les enregistrements A
@@ -319,6 +330,10 @@ async def ajouter_domaine(
     # Nettoyer le domaine
     domaine_clean = data.domaine.strip().lower()
     domaine_clean = domaine_clean.replace("https://", "").replace("http://", "").rstrip("/")
+
+    # Valider le format du domaine
+    if not _DOMAIN_RE.match(domaine_clean):
+        raise HTTPException(status_code=400, detail="Nom de domaine invalide")
 
     # Vérifier unicité
     existing = await db.execute(

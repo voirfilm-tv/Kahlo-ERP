@@ -249,12 +249,15 @@ async def login(data: LoginData, db: AsyncSession = Depends(get_db)):
         # Message générique pour éviter l'énumération d'utilisateurs
         raise HTTPException(status_code=401, detail="Identifiants incorrects")
 
+    now = datetime.now(timezone.utc)
     token = jwt.encode(
         {
             "sub": user.username,
             "user_id": user.id,
             "role": user.role.value,
-            "exp": datetime.now(timezone.utc) + timedelta(hours=SESSION_HOURS),
+            "iat": now,
+            "exp": now + timedelta(hours=SESSION_HOURS),
+            "jti": _secrets.token_hex(16),
         },
         SECRET_KEY, algorithm=ALGORITHM
     )

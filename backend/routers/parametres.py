@@ -8,6 +8,8 @@ sauf les champs non-secrets (emails, noms, délais).
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 import os
 import re
 import logging
@@ -17,11 +19,16 @@ from dotenv import dotenv_values, set_key
 
 logger = logging.getLogger(__name__)
 
-from routers.auth import verifier_token, require_admin
+from database import get_db
+from routers.auth import verifier_token, require_admin, pwd_context
 
 router = APIRouter()
 
-ENV_PATH = Path(os.getenv("ENV_FILE_PATH", "/app/.env"))
+ENV_PATH = Path(os.getenv("ENV_FILE_PATH", "/app/.env")).resolve()
+# Sécurité : vérifier que le chemin reste dans /app/
+if not str(ENV_PATH).startswith("/app/"):
+    logger.error("ENV_FILE_PATH pointe hors de /app/ : %s — fallback sur /app/.env", ENV_PATH)
+    ENV_PATH = Path("/app/.env")
 
 
 # ============================================================
@@ -247,7 +254,8 @@ async def get_parametres(token: str = Depends(verifier_token)):
 @router.post("/")
 async def sauvegarder_parametres(
     data: TousParametres,
-    admin: dict = Depends(require_admin)
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Sauvegarde les paramètres dans le .env.
@@ -343,8 +351,17 @@ async def sauvegarder_parametres(
         if s.new_password and not _est_vide_ou_masque(s.new_password):
             if len(s.new_password) < 8:
                 raise HTTPException(status_code=400, detail="Le mot de passe doit faire au moins 8 caractères")
-            # Écrire le mot de passe en clair dans APP_DEFAULT_PASSWORD
-            # (pas le hash, car Docker Compose casse les $ dans les hashes bcrypt)
+            # 1. Mettre à jour le mot de passe en DB immédiatement
+            from models import Utilisateur
+            admin_username = os.getenv("APP_USERNAME", "kahlo")
+            result_user = await db.execute(
+                select(Utilisateur).where(Utilisateur.username == admin_username)
+            )
+            admin_user = result_user.scalars().first()
+            if admin_user:
+                admin_user.password_hash = pwd_context.hash(s.new_password)
+                await db.commit()
+            # 2. Persister dans .env pour les futurs redémarrages
             _ecrire_cle("APP_DEFAULT_PASSWORD", s.new_password)
         if s.secret_key and not _est_vide_ou_masque(s.secret_key):
             w("SECRET_KEY", s.secret_key)
