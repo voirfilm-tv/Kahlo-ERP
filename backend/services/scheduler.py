@@ -129,13 +129,16 @@ async def check_clients_inactifs():
     from models import Client, Commande, StatutCommande
     from services.brevo import declencher_workflow_relance
     from sqlalchemy import select, func
+    from sqlalchemy.orm import selectinload
     from datetime import datetime, timedelta
 
     logger.info("Vérification des clients inactifs...")
     seuil = datetime.now() - timedelta(days=45)
 
     async with AsyncSessionLocal() as db:
-        result = await db.execute(select(Client))
+        result = await db.execute(
+            select(Client).options(selectinload(Client.commandes))
+        )
         clients = result.scalars().all()
 
         for client in clients:

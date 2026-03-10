@@ -20,43 +20,50 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-async def _seed_fournisseurs():
-    """Insère les fournisseurs de départ s'il n'en existe aucun."""
-    from sqlalchemy import select, text
+async def _run_migrations():
+    """Applique les migrations Alembic (upgrade head).
+    Fallback sur create_all si Alembic échoue (ex: première installation).
+    """
+    try:
+        from alembic.config import Config
+        from alembic import command
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Migrations Alembic appliquées")
+    except Exception as e:
+        logger.warning(f"Alembic indisponible ({e}), fallback sur create_all")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+
+async def _seed_data():
+    """Insère les données initiales si la base est vierge (fournisseurs + admin)."""
+    from sqlalchemy import select
     from models import Fournisseur
+    from routers.auth import _init_admin_si_vide
 
     async with AsyncSessionLocal() as db:
+        # Seed fournisseurs
         result = await db.execute(select(Fournisseur).limit(1))
-        if result.scalars().first() is not None:
-            return
+        if result.scalars().first() is None:
+            seed = [
+                Fournisseur(nom="Café Imports Lyon", email="contact@cafeimports-lyon.fr", pays="France", delai_moyen=5, score=4.5),
+                Fournisseur(nom="Origine Direct", email="hello@origine-direct.com", pays="France", delai_moyen=7, score=4.8),
+                Fournisseur(nom="Terra Coffee", email="pro@terracoffee.eu", pays="Belgique", delai_moyen=10, score=4.2),
+            ]
+            db.add_all(seed)
+            await db.commit()
+            logger.info("Données initiales insérées (fournisseurs)")
 
-        seed = [
-            Fournisseur(nom="Café Imports Lyon", email="contact@cafeimports-lyon.fr", pays="France", delai_moyen=5, score=4.5),
-            Fournisseur(nom="Origine Direct", email="hello@origine-direct.com", pays="France", delai_moyen=7, score=4.8),
-            Fournisseur(nom="Terra Coffee", email="pro@terracoffee.eu", pays="Belgique", delai_moyen=10, score=4.2),
-        ]
-        db.add_all(seed)
-        await db.commit()
-
-        # Créer les index de performance (idem init.sql mais après CREATE TABLE)
-        async with engine.begin() as conn:
-            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_lots_origine ON lots(origine)"))
-            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_lots_actif ON lots(actif)"))
-            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_commandes_statut ON commandes(statut)"))
-            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_commandes_date ON commandes(date_commande)"))
-            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email)"))
-            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_evenements_date ON evenements(date_debut)"))
-            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_marches_date ON marches(date)"))
-
-        logger.info("Données initiales insérées (fournisseurs + index)")
+        # Seed admin
+        await _init_admin_si_vide(db)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup : créer les tables puis seeder
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    await _seed_fournisseurs()
+    # Startup : migrations → seed → scheduler
+    await _run_migrations()
+    await _seed_data()
     start_scheduler()
     yield
     # Shutdown

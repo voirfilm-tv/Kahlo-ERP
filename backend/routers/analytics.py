@@ -200,13 +200,18 @@ async def get_analytics_marches(db: AsyncSession = Depends(get_db), token: str =
 
 @router.get("/origines")
 async def get_analytics_origines(db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
+    # marge_pct est une @property Python, pas une colonne SQL
+    # On calcule la marge en SQL : ((prix_vente - prix_achat) / prix_vente) * 100
+    marge_expr = func.avg(
+        (Lot.prix_vente_kg - Lot.prix_achat_kg) / func.nullif(Lot.prix_vente_kg, 0) * 100
+    )
     r = await db.execute(
         select(
             Lot.origine,
             func.sum(LigneCommande.prix_unitaire).label("ca"),
             func.sum(LigneCommande.poids_g).label("poids_total_g"),
             func.count(LigneCommande.id).label("nb_ventes"),
-            func.avg(Lot.marge_pct).label("marge_pct"),
+            marge_expr.label("marge_pct"),
         )
         .join(LigneCommande, LigneCommande.lot_id == Lot.id)
         .join(Commande, Commande.id == LigneCommande.commande_id)

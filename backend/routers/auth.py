@@ -91,7 +91,6 @@ async def _init_admin_si_vide(db: AsyncSession):
 @router.post("/login")
 async def login(data: LoginData, db: AsyncSession = Depends(get_db)):
     _check_rate_limit(data.username)
-    await _init_admin_si_vide(db)
 
     result = await db.execute(
         select(Utilisateur).where(

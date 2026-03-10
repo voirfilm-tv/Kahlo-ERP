@@ -7,6 +7,7 @@ Doc : https://developer.sumup.com/api/webhooks
 from fastapi import APIRouter, Request, HTTPException, Header, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 import hmac
 import hashlib
 import os
@@ -73,7 +74,9 @@ async def sumup_webhook(
 
 async def handle_paiement_reussi(checkout_id: str, transaction: dict, db: AsyncSession):
     result = await db.execute(
-        select(Commande).where(Commande.sumup_checkout_id == checkout_id)
+        select(Commande)
+        .options(selectinload(Commande.lignes), selectinload(Commande.client), selectinload(Commande.marche))
+        .where(Commande.sumup_checkout_id == checkout_id)
     )
     commande = result.scalar_one_or_none()
     if not commande:
@@ -97,7 +100,9 @@ async def handle_paiement_reussi(checkout_id: str, transaction: dict, db: AsyncS
 
 async def handle_remboursement(checkout_id: str, db: AsyncSession):
     result = await db.execute(
-        select(Commande).where(Commande.sumup_checkout_id == checkout_id)
+        select(Commande)
+        .options(selectinload(Commande.lignes))
+        .where(Commande.sumup_checkout_id == checkout_id)
     )
     commande = result.scalar_one_or_none()
     if not commande:

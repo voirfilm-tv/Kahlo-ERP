@@ -243,7 +243,7 @@ async def changer_statut(
 ):
     result = await db.execute(
         select(Commande)
-        .options(selectinload(Commande.lignes))
+        .options(selectinload(Commande.lignes), selectinload(Commande.client), selectinload(Commande.marche))
         .where(Commande.id == commande_id)
     )
     commande = result.scalar_one_or_none()
@@ -253,7 +253,7 @@ async def changer_statut(
     ancien_statut = commande.statut
     commande.statut = data.statut
 
-    # En attente → Prête : notifier le client
+    # En attente → Prête : notifier le client (brevo accède commande.client et commande.marche)
     if data.statut == StatutCommande.prete and ancien_statut == StatutCommande.en_attente:
         try:
             await notifier_commande_prete(commande)
@@ -277,8 +277,14 @@ async def changer_statut(
         client = await db.get(Client, commande.client_id)
         if client:
             client.tampons = (client.tampons or 0) + 1
-            # Auto-VIP à 5 achats
-            nb_achats = len([c for c in client.commandes if c.statut == StatutCommande.remise])
+            # Auto-VIP à 5 achats (count en DB, évite le lazy load)
+            result_nb = await db.execute(
+                select(func.count()).where(
+                    Commande.client_id == client.id,
+                    Commande.statut == StatutCommande.remise
+                )
+            )
+            nb_achats = result_nb.scalar() or 0
             if nb_achats >= 5:
                 client.vip = True
 

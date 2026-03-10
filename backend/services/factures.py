@@ -399,10 +399,14 @@ async def generer_facture_pdf(db: AsyncSession, commande) -> str:
     # Charger le client
     client = await db.get(Client, commande.client_id)
 
-    # Charger les détails des lignes avec le nom du lot
+    # Charger tous les lots en un seul query (évite N+1)
+    lot_ids = [ligne.lot_id for ligne in commande.lignes]
+    lots_result = await db.execute(select(Lot).where(Lot.id.in_(lot_ids)))
+    lots_map = {lot.id: lot for lot in lots_result.scalars().all()}
+
     lignes_enrichies = []
     for ligne in commande.lignes:
-        lot = await db.get(Lot, ligne.lot_id)
+        lot = lots_map.get(ligne.lot_id)
         lignes_enrichies.append({
             "origine":      lot.origine if lot else f"Lot #{ligne.lot_id}",
             "poids_g":      ligne.poids_g,
