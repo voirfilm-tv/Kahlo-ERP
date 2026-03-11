@@ -10,11 +10,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 import hmac
 import hashlib
+import json
 import os
 import logging
 
 from database import get_db
-from models import Commande, StatutCommande
+from models import Commande, Lot, StatutCommande
 from services.stock import decrementer_stock
 from services.brevo import notifier_client_paiement_recu
 from services.calendrier import creer_evenement_remise
@@ -50,7 +51,10 @@ async def sumup_webhook(
     if not _verifier_signature(payload, x_sumup_signature or ""):
         raise HTTPException(status_code=400, detail="Signature invalide")
 
-    event = await request.json()
+    try:
+        event = json.loads(payload)
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(status_code=400, detail="Corps JSON invalide")
     event_type = event.get("event_type") or event.get("type")
     logger.info(f"SumUp webhook reçu: {event_type}")
 
@@ -83,9 +87,13 @@ async def handle_paiement_reussi(checkout_id: str, transaction: dict, db: AsyncS
         logger.warning(f"Commande introuvable pour SumUp checkout: {checkout_id}")
         return
 
+    # Idempotence : si déjà traité, ignorer
+    if commande.sumup_paid:
+        logger.info(f"Webhook déjà traité pour commande {commande.numero}, ignoré")
+        return
+
     commande.sumup_paid = True
     commande.sumup_transaction_code = transaction.get("transaction_code", "")
-    commande.statut = StatutCommande.en_attente
 
     for ligne in commande.lignes:
         await decrementer_stock(db, ligne.lot_id, ligne.poids_g / 1000)
@@ -93,8 +101,13 @@ async def handle_paiement_reussi(checkout_id: str, transaction: dict, db: AsyncS
     if commande.marche_id:
         await creer_evenement_remise(db, commande)
 
-    await notifier_client_paiement_recu(commande)
     await db.commit()
+
+    # Notification après commit pour ne pas risquer de perdre le paiement
+    try:
+        await notifier_client_paiement_recu(commande)
+    except Exception:
+        logger.exception(f"Erreur notification après paiement commande {commande.numero}")
     logger.info(f"Commande {commande.numero} payée via SumUp")
 
 
@@ -108,8 +121,14 @@ async def handle_remboursement(checkout_id: str, db: AsyncSession):
     if not commande:
         return
     commande.statut = StatutCommande.annulee
+    # Recréditer le stock
     for ligne in commande.lignes:
-        await decrementer_stock(db, ligne.lot_id, -(ligne.poids_g / 1000))
+        lot_result = await db.execute(
+            select(Lot).where(Lot.id == ligne.lot_id)
+        )
+        lot = lot_result.scalar_one_or_none()
+        if lot:
+            lot.stock_kg = (lot.stock_kg or 0) + (ligne.poids_g / 1000)
     await db.commit()
     logger.info(f"Commande {commande.numero} remboursée")
 

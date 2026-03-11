@@ -48,7 +48,6 @@ def _check_rate_limit(key: str):
             status_code=429,
             detail="Trop de tentatives de connexion. Réessayez dans quelques minutes."
         )
-    _login_attempts[key].append(now)
 
 
 # ============================================================
@@ -233,6 +232,11 @@ class LoginData(BaseModel):
 #  ROUTES
 # ============================================================
 
+def _record_failed_attempt(key: str):
+    """Enregistre une tentative échouée après vérification."""
+    _login_attempts[key].append(time.time())
+
+
 @router.post("/login")
 async def login(data: LoginData, db: AsyncSession = Depends(get_db)):
     _check_rate_limit(data.username)
@@ -246,6 +250,7 @@ async def login(data: LoginData, db: AsyncSession = Depends(get_db)):
     user = result.scalars().first()
 
     if not user or not pwd_context.verify(data.password, user.password_hash):
+        _record_failed_attempt(data.username)
         # Message générique pour éviter l'énumération d'utilisateurs
         raise HTTPException(status_code=401, detail="Identifiants incorrects")
 

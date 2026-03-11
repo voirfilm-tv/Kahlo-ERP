@@ -1,6 +1,6 @@
 """KAHLO CAFÉ — Router Analytics"""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, extract
 from sqlalchemy.orm import selectinload
@@ -63,7 +63,7 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db), token: str = D
 # ────────────────────────────────────────────────
 
 @router.get("/ca-mensuel")
-async def get_ca_mensuel(mois: int = 7, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
+async def get_ca_mensuel(mois: int = Query(7, ge=1, le=120), db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     r = await db.execute(
         select(
             extract("year",  Commande.date_commande).label("annee"),
@@ -89,7 +89,7 @@ async def get_ca_mensuel(mois: int = 7, db: AsyncSession = Depends(get_db), toke
 # ────────────────────────────────────────────────
 
 @router.get("/general")
-async def get_analytics_general(mois: int = 12, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
+async def get_analytics_general(mois: int = Query(12, ge=1, le=120), db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     depuis = datetime.now() - timedelta(days=mois * 30)
 
     # CA total + nb commandes

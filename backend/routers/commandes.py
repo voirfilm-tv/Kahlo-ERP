@@ -10,7 +10,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 import random
 import string
 import os
@@ -54,8 +54,9 @@ class ChangerStatut(BaseModel):
 # ============================================================
 
 def generer_numero() -> str:
-    seq = ''.join(random.choices(string.digits, k=4))
-    return f"CMD-{seq}"
+    date_part = datetime.now().strftime("%y%m")
+    seq = ''.join(random.choices(string.digits + string.ascii_uppercase, k=6))
+    return f"CMD-{date_part}-{seq}"
 
 def _serialise_commande(c: Commande, avec_lignes: bool = False) -> dict:
     d = {
@@ -262,7 +263,7 @@ async def changer_statut(
 
     # → Remise : date réelle + facture PDF + tampon fidélité
     elif data.statut == StatutCommande.remise:
-        commande.date_remise_reelle = datetime.now()
+        commande.date_remise_reelle = datetime.now(timezone.utc)
 
         # Générer la facture PDF
         try:
@@ -292,7 +293,9 @@ async def changer_statut(
     elif data.statut == StatutCommande.annulee:
         if commande.sumup_paid or commande.paiement_mode == "especes":
             for ligne in commande.lignes:
-                await decrementer_stock(db, ligne.lot_id, -(ligne.poids_g / 1000))
+                lot = await db.get(Lot, ligne.lot_id)
+                if lot:
+                    lot.stock_kg = (lot.stock_kg or 0) + (ligne.poids_g / 1000)
 
     await db.commit()
     return {"message": "Statut mis à jour", "statut": data.statut}
@@ -307,7 +310,7 @@ async def notifier_prete(commande_id: int, db: AsyncSession = Depends(get_db), t
     """Envoie (ou renvoie) la notification Brevo 'commande prête'"""
     result = await db.execute(
         select(Commande)
-        .options(selectinload(Commande.lignes))
+        .options(selectinload(Commande.lignes), selectinload(Commande.client), selectinload(Commande.marche))
         .where(Commande.id == commande_id)
     )
     commande = result.scalar_one_or_none()

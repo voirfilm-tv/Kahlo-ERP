@@ -278,7 +278,7 @@ def _verifier_dns(domaine: str, valeur_attendue: str) -> dict:
                 if cname:
                     result["valeur_trouvee"] = cname
                     result["type_enregistrement"] = "CNAME"
-                    if valeur_attendue and valeur_attendue.rstrip(".") in cname.rstrip("."):
+                    if valeur_attendue and valeur_attendue.rstrip(".") == cname.rstrip("."):
                         result["valide"] = True
             except Exception:
                 pass
