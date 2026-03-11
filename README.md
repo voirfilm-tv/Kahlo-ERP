@@ -29,6 +29,7 @@ Variables minimales à adapter avant production:
 - `APP_DEFAULT_PASSWORD`
 - `CALDAV_PASSWORD`
 - `CORS_ORIGINS`
+- `BIND_HOST` (laisser `127.0.0.1` derrière un reverse proxy externe)
 
 ## Admin
 
@@ -87,3 +88,7 @@ Restauration:
 ```bash
 cat backup.sql | docker compose exec -T db psql -U kahlo kahlo
 ```
+
+⚠️ Les dumps applicatifs backend sont écrits dans le volume persistant `backups_data` monté sur `/backups/kahlo`.
+
+⚠️ `docker compose down -v` supprime **tous** les volumes nommés (`postgres_data`, `redis_data`, `uploads_data`, `factures_data`, `caldav_data`, `backups_data`).

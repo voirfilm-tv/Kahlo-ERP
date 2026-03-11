@@ -100,6 +100,7 @@ CORS:
 Variables à adapter a minima:
 - POSTGRES_PASSWORD, REDIS_PASSWORD, SECRET_KEY,
   APP_DEFAULT_PASSWORD, CALDAV_PASSWORD, CORS_ORIGINS.
+- BIND_HOST=127.0.0.1 si la stack est derrière un reverse proxy externe.
 
 
 7) EXPLOITATION
@@ -115,3 +116,7 @@ Rotation secrets:
 - redéployer `docker compose up -d --build`
 - invalider les sessions (changement SECRET_KEY)
 
+
+
+Attention volumes:
+- `docker compose down -v` supprime les données persistées (PostgreSQL, Redis, uploads, factures, CalDAV, backups).

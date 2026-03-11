@@ -17,7 +17,7 @@ services:
     environment:
       POSTGRES_DB: kahlo
       POSTGRES_USER: kahlo
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -35,6 +35,11 @@ services:
       resources:
         limits:
           memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   # ----------------------------------------------------------
   #  Redis — Cache, sessions, queue offline sync
@@ -44,11 +49,11 @@ services:
     image: redis:7-alpine
     container_name: kahlo_redis
     restart: unless-stopped
-    command: redis-server --maxmemory 50mb --maxmemory-policy allkeys-lru --save "" --requirepass "${REDIS_PASSWORD:-kahlo_redis_dev}"
+    command: redis-server --maxmemory 50mb --maxmemory-policy allkeys-lru --appendonly yes --appendfsync everysec --save 900 1 --save 300 10 --save 60 10000 --requirepass "${REDIS_PASSWORD:?REDIS_PASSWORD must be set}"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"${REDIS_PASSWORD:-kahlo_redis_dev}\" ping | grep -q PONG"]
+      test: ["CMD-SHELL", "redis-cli -a \"${REDIS_PASSWORD:?REDIS_PASSWORD must be set}\" ping | grep -q PONG"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -56,6 +61,11 @@ services:
       resources:
         limits:
           memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   # ----------------------------------------------------------
   #  Backend — FastAPI (Python)
@@ -69,7 +79,7 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://kahlo:${POSTGRES_PASSWORD}@db:5432/kahlo
-      REDIS_URL: redis://:${REDIS_PASSWORD:-kahlo_redis_dev}@redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@redis:6379
       SUMUP_API_KEY: ${SUMUP_API_KEY}
       SUMUP_CLIENT_ID: ${SUMUP_CLIENT_ID}
       SUMUP_CLIENT_SECRET: ${SUMUP_CLIENT_SECRET}
@@ -103,16 +113,22 @@ services:
     volumes:
       - uploads_data:/app/uploads
       - factures_data:/app/factures
+      - backups_data:/backups/kahlo
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/ready"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 15s
+      start_period: 30s
     deploy:
       resources:
         limits:
           memory: 200M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   # ----------------------------------------------------------
   #  CalDAV — Radicale (sync Apple + Google Calendar)
@@ -145,6 +161,11 @@ services:
       resources:
         limits:
           memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   # ----------------------------------------------------------
   #  Frontend — React (Vite) buildé en static
@@ -166,6 +187,11 @@ services:
       resources:
         limits:
           memory: 32M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   # ----------------------------------------------------------
   #  Nginx — Reverse proxy + SSL
@@ -176,8 +202,8 @@ services:
     container_name: kahlo_nginx
     restart: unless-stopped
     ports:
-      - "${HTTP_PORT:-80}:80"
-      - "${HTTPS_PORT:-443}:443"
+      - "${BIND_HOST:-127.0.0.1}:${HTTP_PORT:-80}:80"
+      - "${BIND_HOST:-127.0.0.1}:${HTTPS_PORT:-443}:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
@@ -188,10 +214,21 @@ services:
         condition: service_healthy
       caldav:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     deploy:
       resources:
         limits:
           memory: 32M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 volumes:
   postgres_data:
@@ -199,6 +236,7 @@ volumes:
   caldav_data:
   uploads_data:
   factures_data:
+  backups_data:
 
 networks:
   default:
