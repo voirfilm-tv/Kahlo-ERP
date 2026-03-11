@@ -15,13 +15,14 @@ if DATABASE_URL.startswith("postgres://"):
 elif DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-engine = create_async_engine(
-    DATABASE_URL,
-    pool_size=5,
-    max_overflow=10,
-    pool_pre_ping=True,
-    echo=False,
-)
+_engine_kwargs = {"echo": False}
+if "sqlite" in DATABASE_URL:
+    from sqlalchemy.pool import StaticPool
+    _engine_kwargs.update(connect_args={"check_same_thread": False}, poolclass=StaticPool)
+else:
+    _engine_kwargs.update(pool_size=5, max_overflow=10, pool_pre_ping=True)
+
+engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
 
 AsyncSessionLocal = async_sessionmaker(
     engine,
