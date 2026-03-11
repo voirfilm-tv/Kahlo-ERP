@@ -26,3 +26,6 @@ nginx/ssl/*.crt
 # Docker volumes
 postgres_data/
 redis_data/
+
+# Local virtualenv
+.venv/

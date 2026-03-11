@@ -48,7 +48,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"${REDIS_PASSWORD:-kahlo_redis_dev}\" ping | grep -q PONG"]
       interval: 10s
       timeout: 3s
       retries: 3
