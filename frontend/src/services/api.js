@@ -38,6 +38,33 @@ api.interceptors.response.use(
 export default api;
 
 // ────────────────────────────────────────────────────────────
+//  HELPERS
+// ────────────────────────────────────────────────────────────
+
+/** Extrait le message d'erreur lisible depuis une réponse Axios.
+ *  Priorité : detail (FastAPI) > message > statusText > fallback */
+export function extractError(err, fallback = "Une erreur est survenue") {
+  const d = err?.response?.data;
+  if (typeof d?.detail === "string") return d.detail;
+  if (Array.isArray(d?.detail)) return d.detail.map(e => e.msg).join(", ");
+  if (typeof d?.message === "string") return d.message;
+  if (err?.response?.statusText) return err.response.statusText;
+  if (err?.message === "Network Error") return "Impossible de joindre le serveur";
+  return fallback;
+}
+
+/** Télécharge un fichier authentifié (PDF etc.) via axios + blob */
+export async function telechargerFichier(url, nomFichier) {
+  const res = await api.get(url, { responseType: "blob" });
+  const blobUrl = URL.createObjectURL(res.data);
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = nomFichier;
+  a.click();
+  URL.revokeObjectURL(blobUrl);
+}
+
+// ────────────────────────────────────────────────────────────
 //  AUTH
 // ────────────────────────────────────────────────────────────
 

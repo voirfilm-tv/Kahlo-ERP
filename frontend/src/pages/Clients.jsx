@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Layout from "../components/Layout";
-import { getClients, creerClient, modifierClient, ajouterTampon, getAlertesCRM } from "../services/api";
+import { getClients, creerClient, modifierClient, ajouterTampon, getAlertesCRM, extractError } from "../services/api";
 
 const C = {
   espresso: "#261810", gold: "#C18A4A", prune: "#6B3F57",
@@ -43,9 +43,11 @@ export default function Clients() {
     queryFn: getAlertesCRM,
   });
 
+  const EMPTY_CLIENT = { prenom: "", nom: "", email: "", telephone: "", ville: "", profil: "florale", mouture_pref: "Grains entiers", quantite_hab_g: 250 };
+
   const creerMutation = useMutation({
     mutationFn: creerClient,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["clients"] }); setShowAdd(false); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["clients"] }); setShowAdd(false); setNewClient(EMPTY_CLIENT); },
   });
 
   const tamponMutation = useMutation({
@@ -203,7 +205,7 @@ export default function Clients() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
             {isLoading
               ? [1,2,3].map(i => <div key={i} className="card" style={{ padding: 20 }}><Skeleton h={100} /></div>)
-              : clients.sort((a, b) => (b.tampons || 0) - (a.tampons || 0)).map(c => (
+              : [...clients].sort((a, b) => (b.tampons || 0) - (a.tampons || 0)).map(c => (
                 <div key={c.id} className="card" style={{ padding: 20 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
                     <div>
@@ -309,7 +311,7 @@ export default function Clients() {
               >
                 {creerMutation.isPending ? "Création..." : "Créer le client"}
               </button>
-              {creerMutation.isError && <div style={{ fontSize: 12, color: "#e8a0b8" }}>Erreur — vérifiez que l'email n'est pas déjà utilisé</div>}
+              {creerMutation.isError && <div style={{ fontSize: 12, color: "#e8a0b8" }}>{extractError(creerMutation.error, "Erreur lors de la création du client")}</div>}
             </div>
           </div>
         </div>

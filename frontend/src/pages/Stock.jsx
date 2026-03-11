@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Layout from "../components/Layout";
-import { getLots, creerLot, modifierLot, ajusterStock, getFournisseurs } from "../services/api";
+import { getLots, creerLot, modifierLot, ajusterStock, getFournisseurs, extractError } from "../services/api";
 
 const C = {
   espresso: "#261810", gold: "#C18A4A", prune: "#6B3F57",
@@ -215,7 +215,16 @@ export default function Stock() {
               onClick={() => ajusterMutation.mutate({ id: selected.id, delta: -0.25, raison: "vente terrain" })}>
               - 250g (vente rapide)
             </button>
-            <button className="btn-g" style={{ width: "100%", padding: 11 }}>✎ Modifier ce lot</button>
+            <button className="btn-g" style={{ width: "100%", padding: 11 }}
+              onClick={() => {
+                setNewLot({
+                  origine: selected.origine, fournisseur_id: String(selected.fournisseur_id || ""),
+                  stock_kg: String(selected.stock_kg), seuil_alerte_kg: String(selected.seuil_alerte_kg),
+                  prix_achat_kg: String(selected.prix_achat_kg), prix_vente_kg: String(selected.prix_vente_kg),
+                  notes_degustation: selected.notes_degustation || "",
+                });
+                setShowAdd(true);
+              }}>✎ Modifier ce lot</button>
           </div>
         </div>
       )}
@@ -252,20 +261,26 @@ export default function Stock() {
               <button
                 className="btn-p"
                 style={{ padding: 13, marginTop: 4, opacity: creerMutation.isPending ? 0.7 : 1 }}
-                disabled={creerMutation.isPending}
-                onClick={() => creerMutation.mutate({
-                  ...newLot,
-                  stock_kg: parseFloat(newLot.stock_kg),
-                  prix_achat_kg: parseFloat(newLot.prix_achat_kg),
-                  prix_vente_kg: parseFloat(newLot.prix_vente_kg),
-                  seuil_alerte_kg: parseFloat(newLot.seuil_alerte_kg),
-                  fournisseur_id: parseInt(newLot.fournisseur_id),
-                  numero_lot: `LOT-${Date.now()}`,
-                })}
+                disabled={creerMutation.isPending || !newLot.origine || !newLot.stock_kg || !newLot.prix_vente_kg}
+                onClick={() => {
+                  const stock = parseFloat(newLot.stock_kg);
+                  const prixA = parseFloat(newLot.prix_achat_kg);
+                  const prixV = parseFloat(newLot.prix_vente_kg);
+                  if (isNaN(stock) || isNaN(prixV)) return;
+                  creerMutation.mutate({
+                    ...newLot,
+                    stock_kg: stock,
+                    prix_achat_kg: isNaN(prixA) ? 0 : prixA,
+                    prix_vente_kg: prixV,
+                    seuil_alerte_kg: parseFloat(newLot.seuil_alerte_kg) || 3,
+                    fournisseur_id: parseInt(newLot.fournisseur_id) || undefined,
+                    numero_lot: `LOT-${Date.now()}`,
+                  });
+                }}
               >
                 {creerMutation.isPending ? "Création..." : "Créer le lot"}
               </button>
-              {creerMutation.isError && <div style={{ fontSize: 12, color: "#e8a0b8" }}>Erreur lors de la création</div>}
+              {creerMutation.isError && <div style={{ fontSize: 12, color: "#e8a0b8" }}>{extractError(creerMutation.error, "Erreur lors de la création")}</div>}
             </div>
           </div>
         </div>
