@@ -1,176 +1,89 @@
-# Kahlo Café — ERP
+# Kahlo ERP
 
-Système de gestion interne sur-mesure pour Kahlo Café, marque de café artisanal lyonnaise.
+ERP interne Kahlo Café (FastAPI + PostgreSQL + Redis + React/Vite + Nginx + Docker Compose).
 
----
-
-## Stack technique
-
-| Service | Techno | RAM |
-|---|---|---|
-| Frontend | React + Vite | ~20MB |
-| Backend | FastAPI (Python) | ~120MB |
-| Base de données | PostgreSQL 16 | ~80MB |
-| Cache + offline | Redis 7 | ~30MB |
-| Calendrier | Radicale (CalDAV) | ~30MB |
-| Proxy | Nginx | ~10MB |
-| **Total** | | **~520MB** |
-
----
-
-## Modules
-
-- **Dashboard** — Vue d'ensemble temps réel
-- **Stock** — Lots par origine, alertes, marges
-- **Fournisseurs** — Contacts, scores, commandes
-- **CRM** — Clients, profils Kahlo, fidélité
-- **Commandes** — Suivi, statuts, notifications
-- **Calendrier** — Marchés, remises, fournisseurs
-- **Analytics** — CA, origines, clients, saisonnalité
-
----
-
-## Intégrations
-
-| Service | Usage |
-|---|---|
-| **SumUp** | Paiements + webhooks temps réel |
-| **Gemini API** | IA gratuite (analyses, suggestions, fiches produit) |
-| **Brevo** | Emails (anniversaires, relances, notifications) |
-| **Google Calendar** | Sync bidirectionnelle |
-| **Apple Calendar** | Sync bidirectionnelle via CalDAV |
-
----
-
-## Installation
-
-### Prérequis
-- Docker + Docker Compose
-- 2GB RAM minimum (4GB recommandé)
-- Linux / macOS / Windows WSL2
-
-### Démarrage rapide
+## Démarrage reproductible (from scratch)
 
 ```bash
-# 1. Cloner le projet
-git clone https://github.com/kahlocafe/erp.git
-cd erp
-
-# 2. Configurer les variables
+git clone <repo>
+cd Kahlo-ERP
 cp .env.example .env
-nano .env   # Remplir les clés API
-
-# 3. Démarrer
-./start.sh dev
+docker compose up --build
 ```
 
-L'app est disponible sur **http://localhost**
+Application:
+- Frontend: `http://localhost`
+- API: `http://localhost/api`
+- Health backend: `http://localhost/api/health`
 
-### Clés API nécessaires
+> Le script `start.sh` est conservé pour la commodité locale, mais la commande de référence pour la livraison reste `docker compose up --build`.
 
-| Service | Où trouver | Gratuit ? |
-|---|---|---|
-| SumUp | developer.sumup.com | Oui (frais sur transactions) |
-| Gemini | aistudio.google.com/app/apikey | Oui |
-| Brevo | app.brevo.com/settings/keys | Oui (300 emails/jour) |
-| Google Calendar | console.cloud.google.com | Oui |
+## Variables `.env`
 
----
+La référence exhaustive et documentée est `./.env.example`.
 
-## Sync Calendrier
+Variables minimales à adapter avant production:
+- `POSTGRES_PASSWORD`
+- `REDIS_PASSWORD`
+- `SECRET_KEY`
+- `APP_DEFAULT_PASSWORD`
+- `CALDAV_PASSWORD`
+- `CORS_ORIGINS`
 
-### Apple Calendar (CalDAV)
-Dans iPhone/Mac → Calendriers → Ajouter un compte → Autre → CalDAV :
-- Serveur : `http://VOTRE_IP/caldav/`
-- Identifiant : `kahlo`
-- Mot de passe : (défini dans .env)
+## Admin
 
-### Google Calendar
-Cliquer sur "Connecter Google Calendar" dans l'app → OAuth automatique.
+Au premier démarrage, si la table `utilisateurs` est vide:
+- création auto de l'admin `APP_USERNAME`
+- mot de passe `APP_DEFAULT_PASSWORD`
 
----
+Reset forcé admin:
+1. définir `ADMIN_FORCE_RESET=true`
+2. redémarrer le backend
+3. remettre `ADMIN_FORCE_RESET=false`
 
-## Mode offline (terrain)
+## Migrations et seed
 
-L'app fonctionne sans internet sur le stand. Les ventes sont mises en queue Redis et synchronisées automatiquement à la reconnexion dans l'ordre :
-1. Décrémentation stock
-2. Création commandes
-3. Mise à jour CRM
-4. Sync calendrier
+- Le backend applique `alembic upgrade head` au démarrage.
+- En fallback, `Base.metadata.create_all()` est utilisé si Alembic échoue.
+- Seed initial: fournisseurs + admin bootstrap.
 
-Indicateur de sync visible en haut de l'interface.
+## Tests
 
----
-
-## Commandes utiles
-
+Backend:
 ```bash
-# Démarrer en dev (avec logs)
-./start.sh dev
+.venv/bin/python -m pytest backend/tests -q
+```
 
-# Démarrer en prod (arrière-plan)
-./start.sh prod
+Frontend:
+```bash
+cd frontend
+npm run build
+```
 
-# Arrêter
-./start.sh stop
+## Production (résumé)
 
-# Voir les logs
+- Nginx sert de reverse proxy (service `nginx`).
+- Ajuster `CORS_ORIGINS` à vos domaines réels.
+- Monter vos certificats dans `nginx/ssl/`.
+- Faire tourner la stack en arrière-plan:
+  ```bash
+  docker compose up -d --build
+  ```
+
+## Exploitation
+
+Logs:
+```bash
 docker compose logs -f backend
-
-# Accéder à la base de données
-docker exec -it kahlo_db psql -U kahlo -d kahlo
-
-# Reset complet (⚠ supprime les données)
-./start.sh reset
+docker compose logs -f nginx
 ```
 
----
-
-## Structure du projet
-
-```
-kahlo-erp/
-├── docker-compose.yml
-├── .env.example
-├── start.sh
-├── backend/
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   ├── main.py              # Point d'entrée FastAPI
-│   ├── models.py            # Modèles SQLAlchemy
-│   ├── database.py          # Connexion DB
-│   ├── routers/             # Routes API par module
-│   │   ├── auth.py
-│   │   ├── stock.py
-│   │   ├── clients.py
-│   │   ├── commandes.py
-│   │   ├── marches.py
-│   │   ├── calendrier.py
-│   │   ├── analytics.py
-│   │   ├── webhooks.py      # SumUp webhooks
-│   │   └── ia.py            # Endpoints Gemini
-│   ├── services/
-│   │   ├── ia.py            # Gemini API
-│   │   ├── calendrier.py    # CalDAV + Google Calendar
-│   │   ├── offline_sync.py  # Mode terrain
-│   │   ├── scheduler.py     # Tâches automatiques
-│   │   ├── brevo.py         # Emails
-│   │   └── stock.py         # Logique stock
-│   └── sql/
-│       └── init.sql         # Données initiales
-├── frontend/
-│   ├── Dockerfile
-│   ├── src/
-│   │   ├── pages/           # Modules (Dashboard, Stock, CRM...)
-│   │   ├── components/      # Composants réutilisables
-│   │   ├── services/        # Appels API
-│   │   ├── hooks/           # useOfflineSync, useSumUp...
-│   │   └── stores/          # État global (Zustand)
-│   └── vite.config.js
-└── nginx/
-    └── nginx.conf
+Sauvegarde DB:
+```bash
+docker compose exec db pg_dump -U kahlo kahlo > backup.sql
 ```
 
----
-
-*Kahlo Café · Lyon · 2026*
+Restauration:
+```bash
+cat backup.sql | docker compose exec -T db psql -U kahlo kahlo
+```

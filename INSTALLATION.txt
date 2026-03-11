@@ -1,252 +1,117 @@
-================================================================================
-                    KAHLO-ERP — GUIDE DE DÉPLOIEMENT DOCKER
-================================================================================
+KAHLO ERP — DOCUMENTATION TECHNIQUE EXÉCUTABLE
+=============================================
 
-Table des matières :
-  1. Prérequis
-  2. Architecture de la stack
-  3. Services
-  4. Variables d'environnement
-  5. Lancement rapide
-  6. Configuration production
-  7. Volumes et données persistantes
-  8. Commandes utiles
-  9. Dépannage
+1) INSTALLATION LOCALE
+----------------------
 
-================================================================================
-1. PRÉREQUIS
-================================================================================
+Prérequis:
+- Docker Engine + Docker Compose v2
 
-- Docker >= 24.0
-- Docker Compose >= 2.20
-- Machine avec minimum 4 Go de RAM (la stack utilise ~550 Mo)
-- Ports 80 et 443 disponibles sur la machine hôte
-
-================================================================================
-2. ARCHITECTURE DE LA STACK
-================================================================================
-
-La stack est composée de 6 services reliés par un réseau Docker interne
-(kahlo_network). Tout le trafic externe passe par le reverse proxy Nginx.
-
-  Utilisateur (HTTP/HTTPS ports 80, 443)
-          |
-      Nginx (reverse proxy)
-      |-- /api/webhooks/sumup  -->  Backend (FastAPI :8000)
-      |-- /api/*               -->  Backend (FastAPI :8000)
-      |-- /caldav/*            -->  Radicale (CalDAV :5232)
-      |-- /*                   -->  Frontend (React/Nginx :80)
-          |
-          Backend (FastAPI :8000)
-          |-- PostgreSQL (db :5432)
-          |-- Redis (cache :6379)
-          |-- Radicale (caldav :5232)
-
-================================================================================
-3. SERVICES
-================================================================================
-
-  Service     | Image                         | RAM max | Rôle
-  ------------|-------------------------------|---------|-----------------------------
-  db          | postgres:16-alpine            | 128 Mo  | Base de données principale
-  redis       | redis:7-alpine                |  64 Mo  | Cache, sessions, file d'attente
-  backend     | python:3.12-slim (custom)     | 200 Mo  | API FastAPI (Uvicorn)
-  caldav      | tomsquest/docker-radicale:3.3 |  64 Mo  | Synchronisation CalDAV
-  frontend    | node:20-alpine + nginx:1.27   |  32 Mo  | Application React (SPA)
-  nginx       | nginx:1.27-alpine             |  32 Mo  | Reverse proxy + SSL
-
-  Total RAM allouée : ~520 Mo
-
-  Ordre de démarrage (dépendances) :
-    db, redis  -->  backend  -->  frontend  -->  nginx
-                    caldav -------------------------^
-
-  Health checks :
-    - db    : pg_isready -U kahlo (toutes les 5s, 10 tentatives)
-    - redis : redis-cli ping (toutes les 10s, 3 tentatives)
-
-================================================================================
-4. VARIABLES D'ENVIRONNEMENT
-================================================================================
-
-Copiez le fichier .env.example vers .env et renseignez vos valeurs :
-
-  cp .env.example .env
-
-  Variable               | Description                          | Valeur par défaut
-  -----------------------|--------------------------------------|---------------------------
-  POSTGRES_PASSWORD      | Mot de passe PostgreSQL              | kahlo_dev_2024
-  SECRET_KEY             | Clé secrète JWT/sessions             | dev-secret-key-change-in-production
-  SUMUP_API_KEY          | Clé API SumUp (paiements)            | (vide)
-  SUMUP_CLIENT_ID        | Client ID OAuth SumUp                | (vide)
-  SUMUP_CLIENT_SECRET    | Secret OAuth SumUp                   | (vide)
-  SUMUP_WEBHOOK_SECRET   | Vérification webhooks SumUp          | (vide)
-  GEMINI_API_KEY         | Clé API Google Gemini (IA)           | (vide)
-  BREVO_API_KEY          | Clé API Brevo (emails)               | (vide)
-  GOOGLE_CLIENT_ID       | Client ID Google OAuth               | (vide)
-  GOOGLE_CLIENT_SECRET   | Secret Google OAuth                  | (vide)
-
-  IMPORTANT en production :
-    - Changez POSTGRES_PASSWORD avec un mot de passe fort
-    - Changez SECRET_KEY avec une clé aléatoire (ex: openssl rand -hex 32)
-    - Ne laissez JAMAIS les valeurs par défaut en production
-
-  Variables internes (définies dans docker-compose.yml) :
-    - DATABASE_URL       : postgresql://kahlo:<password>@db:5432/kahlo
-    - REDIS_URL          : redis://redis:6379
-    - SESSION_HOURS      : 8 (durée de session en heures)
-    - APP_USERNAME        : kahlo (utilisateur par défaut)
-    - CALDAV_BASE_URL    : http://caldav:5232
-
-================================================================================
-5. LANCEMENT RAPIDE
-================================================================================
-
-  # 1. Cloner le projet
-  git clone <url-du-repo> Kahlo-ERP
+Procédure validée (commande cible):
+  git clone <repo>
   cd Kahlo-ERP
-
-  # 2. Copier et configurer les variables d'environnement
   cp .env.example .env
-  nano .env    # ou vim, selon votre éditeur
+  docker compose up --build
 
-  # 3. Construire et lancer la stack
-  docker compose up -d --build
+Services attendus:
+- nginx (point d'entrée)
+- frontend (React build statique)
+- backend (FastAPI)
+- db (PostgreSQL)
+- redis
+- caldav (Radicale)
 
-  # 4. Vérifier que tous les services tournent
-  docker compose ps
 
-  # 5. Consulter les logs si besoin
-  docker compose logs -f
+2) VARIABLES .ENV
+-----------------
 
-  L'application est accessible sur :
-    - http://localhost        (interface web)
-    - http://localhost/api/   (API backend)
+Toutes les variables supportées sont listées dans `.env.example` avec valeurs
+par défaut recommandées pour le développement.
 
-================================================================================
-6. CONFIGURATION PRODUCTION
-================================================================================
+Groupes:
+- Infrastructure: POSTGRES_PASSWORD, REDIS_PASSWORD, HTTP_PORT, HTTPS_PORT
+- Sécurité: SECRET_KEY, APP_USERNAME, APP_DEFAULT_PASSWORD,
+  ADMIN_FORCE_RESET, SESSION_HOURS, LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECONDS
+- CORS/API: CORS_ORIGINS, DATABASE_URL, REDIS_URL
+- Intégrations: SUMUP_*, BREVO_*, GEMINI_*, GOOGLE_*, CALDAV_*
+- Métier: BOUTIQUE_*, OBJECTIF_CA_MENSUEL, STOCK_*, CRM_*
+- Exploitation: BACKUP_*, FACTURES_DIR
 
-  A. HTTPS / SSL
-  ---------------
-  1. Placez vos certificats SSL dans le dossier nginx/ :
-     - nginx/ssl/cert.pem
-     - nginx/ssl/key.pem
+Recommandé en production:
+- SECRET_KEY forte et unique
+- APP_DEFAULT_PASSWORD robuste
+- CORS_ORIGINS limité aux domaines front réels
+- secrets API non vides seulement si intégration activée
 
-  2. Dans nginx/nginx.conf, décommentez les sections HTTPS :
-     - Le bloc "server" sur le port 443
-     - La redirection HTTP vers HTTPS sur le port 80
-     - Les headers HSTS
 
-  3. Dans docker-compose.yml, vérifiez que le port 443 est bien exposé :
-     ports:
-       - "80:80"
-       - "443:443"
+3) ADMIN
+--------
 
-  B. Sécurité
-  ------------
-  - Le backend tourne en utilisateur non-root (appuser)
-  - Nginx ajoute les headers de sécurité :
-      X-Frame-Options: DENY
-      X-Content-Type-Options: nosniff
-      X-XSS-Protection: 1; mode=block
-      Referrer-Policy: strict-origin-when-cross-origin
-      Permissions-Policy: camera=(), microphone=(), geolocation=()
-  - Taille max des uploads : 10 Mo (client_max_body_size)
-  - Toutes les routes API sont protégées par authentification JWT
+Création admin initial:
+- Au startup backend, si table utilisateurs vide:
+  - username = APP_USERNAME
+  - mot de passe = APP_DEFAULT_PASSWORD (ou APP_PASSWORD_HASH)
 
-  C. Performance
-  ---------------
-  - Redis : 50 Mo max de mémoire, politique d'éviction LRU
-  - Gzip activé sur les contenus texte/CSS/JSON/JavaScript
-  - Build frontend multi-stage (image finale légère avec nginx)
+Reset mot de passe admin:
+- ADMIN_FORCE_RESET=true
+- redémarrer backend
+- remettre ADMIN_FORCE_RESET=false
 
-================================================================================
-7. VOLUMES ET DONNÉES PERSISTANTES
-================================================================================
 
-  Volume          | Chemin dans le conteneur        | Contenu
-  ----------------|---------------------------------|---------------------------
-  postgres_data   | /var/lib/postgresql/data         | Base de données PostgreSQL
-  redis_data      | /data                           | Cache Redis
-  caldav_data     | /data                           | Données calendrier CalDAV
-  uploads_data    | /app/uploads                    | Fichiers uploadés
+4) DATABASE
+-----------
 
-  Pour sauvegarder la base de données :
-    docker compose exec db pg_dump -U kahlo kahlo > backup_$(date +%Y%m%d).sql
+Migrations:
+- Exécution automatique d'Alembic au démarrage backend: `upgrade head`
+- Fallback create_all en cas d'indisponibilité Alembic
 
-  Pour restaurer une sauvegarde :
-    cat backup.sql | docker compose exec -T db psql -U kahlo kahlo
+Seed:
+- Insertion fournisseurs de base si table vide
+- Bootstrap admin si table utilisateurs vide
 
-================================================================================
-8. COMMANDES UTILES
-================================================================================
+Sauvegarde:
+  docker compose exec db pg_dump -U kahlo kahlo > backup.sql
 
-  # Démarrer la stack
-  docker compose up -d
+Restauration:
+  cat backup.sql | docker compose exec -T db psql -U kahlo kahlo
 
-  # Arrêter la stack
-  docker compose down
 
-  # Arrêter et supprimer les volumes (ATTENTION : perte de données)
-  docker compose down -v
+5) TESTS
+--------
 
-  # Reconstruire un service spécifique
-  docker compose up -d --build backend
+Backend:
+  .venv/bin/python -m pytest backend/tests -q
 
-  # Voir les logs d'un service
+Frontend:
+  cd frontend
+  npm run build
+
+
+6) PRODUCTION
+-------------
+
+Reverse proxy:
+- Service nginx exposé via HTTP_PORT/HTTPS_PORT.
+- Ajuster certificats dans `nginx/ssl`.
+
+CORS:
+- Paramètre backend `CORS_ORIGINS` (liste CSV).
+
+Variables à adapter a minima:
+- POSTGRES_PASSWORD, REDIS_PASSWORD, SECRET_KEY,
+  APP_DEFAULT_PASSWORD, CALDAV_PASSWORD, CORS_ORIGINS.
+
+
+7) EXPLOITATION
+---------------
+
+Logs:
   docker compose logs -f backend
   docker compose logs -f nginx
+  docker compose logs -f db
 
-  # Ouvrir un shell dans le backend
-  docker compose exec backend bash
+Rotation secrets:
+- Changer dans `.env`
+- redéployer `docker compose up -d --build`
+- invalider les sessions (changement SECRET_KEY)
 
-  # Accéder à la base de données
-  docker compose exec db psql -U kahlo kahlo
-
-  # Vérifier l'état des services
-  docker compose ps
-
-  # Redémarrer un service
-  docker compose restart backend
-
-================================================================================
-9. DÉPANNAGE
-================================================================================
-
-  Problème : Le backend ne démarre pas
-  Solution :
-    - Vérifiez que la base de données est prête : docker compose logs db
-    - Vérifiez les variables d'environnement dans .env
-    - Consultez les logs : docker compose logs backend
-
-  Problème : Erreur 502 Bad Gateway sur nginx
-  Solution :
-    - Le backend n'est peut-être pas encore prêt
-    - Attendez quelques secondes et réessayez
-    - Vérifiez : docker compose ps (tous les services doivent être "Up")
-
-  Problème : La base de données refuse les connexions
-  Solution :
-    - Vérifiez que le health check passe : docker compose ps db
-    - Vérifiez le mot de passe dans .env (POSTGRES_PASSWORD)
-
-  Problème : Le frontend affiche une page blanche
-  Solution :
-    - Reconstruisez le frontend : docker compose up -d --build frontend
-    - Vérifiez les logs : docker compose logs frontend
-
-  Problème : Les fichiers uploadés sont perdus après redémarrage
-  Solution :
-    - Vérifiez que le volume uploads_data est bien monté
-    - N'utilisez pas "docker compose down -v" (supprime les volumes)
-
-  Problème : Erreurs CORS sur les appels API
-  Solution :
-    - Tout doit passer par nginx (même domaine), pas d'accès direct au backend
-    - Vérifiez que vous accédez via http://localhost et non http://localhost:8000
-
-================================================================================
-  Kahlo-ERP — Développé avec Docker Compose
-  Pour toute question, consultez le fichier docker-compose.yml
-================================================================================
