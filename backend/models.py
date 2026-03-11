@@ -5,7 +5,7 @@ SQLAlchemy ORM
 
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean, DateTime,
-    Text, ForeignKey, Enum, JSON
+    Text, ForeignKey, Enum, JSON, Index
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -119,9 +119,13 @@ class Fournisseur(Base):
 
 class Lot(Base):
     __tablename__ = "lots"
+    __table_args__ = (
+        Index("idx_lots_origine", "origine"),
+        Index("idx_lots_actif", "actif"),
+    )
 
     id              = Column(Integer, primary_key=True)
-    fournisseur_id  = Column(Integer, ForeignKey("fournisseurs.id"))
+    fournisseur_id  = Column(Integer, ForeignKey("fournisseurs.id", ondelete="SET NULL"), nullable=True)
     origine         = Column(String(200), nullable=False)  # ex: "Éthiopie Yirgacheffe"
     numero_lot      = Column(String(100), unique=True)     # ex: "LOT-2026-014"
     stock_kg        = Column(Float, default=0.0)
@@ -140,6 +144,8 @@ class Lot(Base):
 
     @property
     def marge_pct(self):
+        if not self.prix_vente_kg:
+            return 0
         return round(((self.prix_vente_kg - self.prix_achat_kg) / self.prix_vente_kg) * 100)
 
     @property
@@ -151,7 +157,7 @@ class CommandeFournisseur(Base):
     __tablename__ = "commandes_fournisseurs"
 
     id             = Column(Integer, primary_key=True)
-    fournisseur_id = Column(Integer, ForeignKey("fournisseurs.id"))
+    fournisseur_id = Column(Integer, ForeignKey("fournisseurs.id", ondelete="CASCADE"))
     date_commande  = Column(DateTime, server_default=func.now())
     date_reception = Column(DateTime)
     statut         = Column(String(50), default="en_attente")
@@ -167,6 +173,10 @@ class CommandeFournisseur(Base):
 
 class Client(Base):
     __tablename__ = "clients"
+    __table_args__ = (
+        Index("idx_clients_email", "email"),
+        Index("idx_clients_nom", "nom", "prenom"),
+    )
 
     id              = Column(Integer, primary_key=True)
     prenom          = Column(String(100), nullable=False)
@@ -192,7 +202,7 @@ class Client(Base):
 
     @property
     def total_achats(self):
-        return sum(c.montant for c in self.commandes if c.statut != StatutCommande.annulee)
+        return sum(c.montant_total for c in self.commandes if c.statut != StatutCommande.annulee)
 
     @property
     def nb_achats(self):
@@ -205,11 +215,18 @@ class Client(Base):
 
 class Commande(Base):
     __tablename__ = "commandes"
+    __table_args__ = (
+        Index("idx_commandes_statut", "statut"),
+        Index("idx_commandes_date", "date_commande"),
+        Index("idx_commandes_client", "client_id"),
+        Index("idx_commandes_marche", "marche_id"),
+        Index("idx_commandes_sumup", "sumup_checkout_id"),
+    )
 
     id              = Column(Integer, primary_key=True)
     numero          = Column(String(20), unique=True)   # "CMD-041"
-    client_id       = Column(Integer, ForeignKey("clients.id"))
-    marche_id       = Column(Integer, ForeignKey("marches.id"), nullable=True)
+    client_id       = Column(Integer, ForeignKey("clients.id", ondelete="SET NULL"), nullable=True)
+    marche_id       = Column(Integer, ForeignKey("marches.id", ondelete="SET NULL"), nullable=True)
     statut          = Column(Enum(StatutCommande), default=StatutCommande.en_attente)
     montant_total   = Column(Float, default=0.0)
     date_commande   = Column(DateTime, server_default=func.now())
@@ -225,15 +242,20 @@ class Commande(Base):
     updated_at      = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     client  = relationship("Client", back_populates="commandes")
-    lignes  = relationship("LigneCommande", back_populates="commande")
+    marche  = relationship("Marche", back_populates="commandes")
+    lignes  = relationship("LigneCommande", back_populates="commande", cascade="all, delete-orphan")
 
 
 class LigneCommande(Base):
     __tablename__ = "lignes_commande"
+    __table_args__ = (
+        Index("idx_lignes_commande_id", "commande_id"),
+        Index("idx_lignes_lot_id", "lot_id"),
+    )
 
     id         = Column(Integer, primary_key=True)
-    commande_id = Column(Integer, ForeignKey("commandes.id"))
-    lot_id     = Column(Integer, ForeignKey("lots.id"))
+    commande_id = Column(Integer, ForeignKey("commandes.id", ondelete="CASCADE"), nullable=False)
+    lot_id     = Column(Integer, ForeignKey("lots.id", ondelete="RESTRICT"), nullable=False)
     poids_g    = Column(Integer, nullable=False)     # 250, 500, 1000
     mouture    = Column(Enum(Mouture))
     prix_unitaire = Column(Float, nullable=False)
@@ -248,6 +270,9 @@ class LigneCommande(Base):
 
 class Marche(Base):
     __tablename__ = "marches"
+    __table_args__ = (
+        Index("idx_marches_date", "date"),
+    )
 
     id              = Column(Integer, primary_key=True)
     nom             = Column(String(200), nullable=False)
@@ -269,15 +294,17 @@ class Marche(Base):
     caldav_event_id = Column(String(200))
     created_at      = Column(DateTime, server_default=func.now())
 
+    commandes = relationship("Commande", back_populates="marche")
+
     @property
     def marge_nette(self):
-        if self.ca_realise and self.frais_reels:
+        if self.ca_realise is not None and self.frais_reels is not None:
             return self.ca_realise - self.frais_reels
         return None
 
     @property
     def taux_ecoulement(self):
-        if self.stock_emmene_kg and self.stock_ramene_kg:
+        if self.stock_emmene_kg is not None and self.stock_ramene_kg is not None and self.stock_emmene_kg > 0:
             vendu = self.stock_emmene_kg - self.stock_ramene_kg
             return round((vendu / self.stock_emmene_kg) * 100)
         return None
@@ -289,6 +316,9 @@ class Marche(Base):
 
 class Evenement(Base):
     __tablename__ = "evenements"
+    __table_args__ = (
+        Index("idx_evenements_date", "date_debut"),
+    )
 
     id              = Column(Integer, primary_key=True)
     type            = Column(Enum(TypeEvenement), nullable=False)
@@ -298,10 +328,14 @@ class Evenement(Base):
     all_day         = Column(Boolean, default=True)
     notes           = Column(Text)
     # Liens vers d'autres entités
-    marche_id       = Column(Integer, ForeignKey("marches.id"), nullable=True)
-    commande_id     = Column(Integer, ForeignKey("commandes.id"), nullable=True)
-    fournisseur_id  = Column(Integer, ForeignKey("fournisseurs.id"), nullable=True)
+    marche_id       = Column(Integer, ForeignKey("marches.id", ondelete="SET NULL"), nullable=True)
+    commande_id     = Column(Integer, ForeignKey("commandes.id", ondelete="SET NULL"), nullable=True)
+    fournisseur_id  = Column(Integer, ForeignKey("fournisseurs.id", ondelete="SET NULL"), nullable=True)
     # Sync
     google_event_id = Column(String(200))
     caldav_uid      = Column(String(200))
     created_at      = Column(DateTime, server_default=func.now())
+
+    marche      = relationship("Marche", lazy="select")
+    commande    = relationship("Commande", lazy="select")
+    fournisseur = relationship("Fournisseur", lazy="select")

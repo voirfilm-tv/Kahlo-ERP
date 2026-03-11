@@ -10,6 +10,9 @@ from sqlalchemy.orm import selectinload
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import datetime, timedelta
+import logging
+
+logger = logging.getLogger(__name__)
 
 from database import get_db
 from models import Client, Commande, StatutCommande, ProfilKahlo, Mouture
@@ -99,7 +102,8 @@ async def get_clients(
         .order_by(Client.nom)
     )
     if search:
-        q = f"%{search}%"
+        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        q = f"%{escaped}%"
         query = query.where(
             (Client.prenom.ilike(q)) |
             (Client.nom.ilike(q)) |
@@ -137,10 +141,17 @@ async def get_alertes(db: AsyncSession = Depends(get_db), token: str = Depends(v
     for c in clients:
         if not c.anniversaire:
             continue
-        anniv = c.anniversaire.replace(year=aujourd_hui.year)
+        try:
+            anniv = c.anniversaire.replace(year=aujourd_hui.year)
+        except ValueError:
+            # 29 février sur année non-bissextile
+            anniv = c.anniversaire.replace(year=aujourd_hui.year, month=3, day=1)
         # Si déjà passé cette année, on prend l'année suivante
         if anniv < aujourd_hui:
-            anniv = anniv.replace(year=aujourd_hui.year + 1)
+            try:
+                anniv = anniv.replace(year=aujourd_hui.year + 1)
+            except ValueError:
+                anniv = c.anniversaire.replace(year=aujourd_hui.year + 1, month=3, day=1)
         if aujourd_hui <= anniv <= dans_14j:
             jours = (anniv - aujourd_hui).days
             anniversaires.append({
@@ -202,7 +213,7 @@ async def creer_client(data: ClientCreate, db: AsyncSession = Depends(get_db), t
         await sync_client_brevo(client)
         await db.commit()
     except Exception:
-        pass
+        logger.exception("Erreur sync Brevo lors de la création client")
 
     return _serialise_client(client)
 
@@ -228,7 +239,7 @@ async def modifier_client(
     try:
         await sync_client_brevo(client)
     except Exception:
-        pass
+        logger.exception("Erreur sync Brevo lors de la modification client")
 
     return _serialise_client(client)
 

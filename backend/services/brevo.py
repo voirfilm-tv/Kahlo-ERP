@@ -31,12 +31,15 @@ _BREVO_FROM_NAME = os.getenv("BREVO_FROM_NAME", "Kahlo Café")
 
 async def _run_sync(func, *args, **kwargs):
     """Exécute une fonction synchrone dans un thread pool."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, partial(func, *args, **kwargs))
 
 
 async def sync_client_brevo(client) -> str:
     """Crée ou met à jour un contact dans Brevo"""
+    if not client.email:
+        logger.warning("sync_client_brevo: pas d'email, abandon")
+        return ""
     api = _get_contacts_api()
     try:
         contact = sib_api_v3_sdk.CreateContact(
@@ -93,7 +96,7 @@ async def notifier_client_paiement_recu(commande):
             params={
                 "PRENOM": commande.client.prenom,
                 "NUMERO": commande.numero,
-                "MONTANT": commande.montant_total,
+                "MONTANT": f"{commande.montant_total:.2f}",
                 "MARCHE": "votre prochain marché",
             },
             sender={"email": _BREVO_FROM_EMAIL, "name": _BREVO_FROM_NAME}

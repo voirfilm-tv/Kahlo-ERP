@@ -67,8 +67,16 @@ elif [ "$MODE" = "prod" ]; then
         echo "  Générez une clé : python3 -c \"import secrets; print(secrets.token_hex(32))\""
         exit 1
     fi
-    if [ "$POSTGRES_PASSWORD" = "kahlo_dev_2024" ]; then
-        echo -e "${RED}✗ POSTGRES_PASSWORD utilise la valeur par défaut${NC}"
+    if [ "$POSTGRES_PASSWORD" = "kahlo_dev_2024" ] || [ -z "$POSTGRES_PASSWORD" ]; then
+        echo -e "${RED}✗ POSTGRES_PASSWORD utilise la valeur par défaut ou est vide${NC}"
+        exit 1
+    fi
+    if [ "${APP_DEFAULT_PASSWORD:-changeme}" = "changeme" ]; then
+        echo -e "${RED}✗ APP_DEFAULT_PASSWORD non configuré pour la production${NC}"
+        exit 1
+    fi
+    if [ "${CALDAV_PASSWORD:-changeme}" = "changeme" ]; then
+        echo -e "${RED}✗ CALDAV_PASSWORD non configuré pour la production${NC}"
         exit 1
     fi
 

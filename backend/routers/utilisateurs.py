@@ -9,7 +9,7 @@ from typing import Optional, List
 from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 from passlib.context import CryptContext
-from datetime import datetime
+from datetime import datetime, timezone
 import socket
 import logging
 
@@ -76,8 +76,8 @@ async def changer_mot_de_passe(
     if data.nouveau_mot_de_passe != data.confirmer_mot_de_passe:
         raise HTTPException(status_code=400, detail="Les mots de passe ne correspondent pas")
 
-    if len(data.nouveau_mot_de_passe) < 6:
-        raise HTTPException(status_code=400, detail="Le mot de passe doit faire au moins 6 caractères")
+    if len(data.nouveau_mot_de_passe) < 8:
+        raise HTTPException(status_code=400, detail="Le mot de passe doit faire au moins 8 caractères")
 
     result = await db.execute(
         select(Utilisateur).where(Utilisateur.id == payload["user_id"])
@@ -134,10 +134,10 @@ async def creer_utilisateur(
         select(Utilisateur).where(Utilisateur.username == data.username)
     )
     if existing.scalars().first():
-        raise HTTPException(status_code=400, detail=f"Le nom d'utilisateur '{data.username}' existe déjà")
+        raise HTTPException(status_code=409, detail="Ce nom d'utilisateur est déjà pris")
 
-    if len(data.password) < 6:
-        raise HTTPException(status_code=400, detail="Le mot de passe doit faire au moins 6 caractères")
+    if len(data.password) < 8:
+        raise HTTPException(status_code=400, detail="Le mot de passe doit faire au moins 8 caractères")
 
     if data.role not in ("admin", "utilisateur"):
         raise HTTPException(status_code=400, detail="Rôle invalide (admin ou utilisateur)")
@@ -195,8 +195,8 @@ async def modifier_utilisateur(
     if data.actif is not None:
         user.actif = data.actif
     if data.nouveau_mot_de_passe:
-        if len(data.nouveau_mot_de_passe) < 6:
-            raise HTTPException(status_code=400, detail="Le mot de passe doit faire au moins 6 caractères")
+        if len(data.nouveau_mot_de_passe) < 8:
+            raise HTTPException(status_code=400, detail="Le mot de passe doit faire au moins 8 caractères")
         user.password_hash = pwd_context.hash(data.nouveau_mot_de_passe)
 
     await db.commit()
@@ -229,6 +229,12 @@ async def supprimer_utilisateur(
 #  GESTION DOMAINES (admin only)
 # ============================================================
 
+import re as _re
+
+# Regex stricte pour les noms de domaine (RFC 1035)
+_DOMAIN_RE = _re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)(\.[a-z0-9-]{1,63})*\.[a-z]{2,}$")
+
+
 def _verifier_dns(domaine: str, valeur_attendue: str) -> dict:
     """Vérifie les enregistrements DNS d'un domaine."""
     result = {
@@ -239,6 +245,11 @@ def _verifier_dns(domaine: str, valeur_attendue: str) -> dict:
         "type_enregistrement": None,
         "erreur": None,
     }
+
+    # Validation stricte du domaine avant toute opération réseau/subprocess
+    if not _DOMAIN_RE.match(domaine):
+        result["erreur"] = "Nom de domaine invalide"
+        return result
 
     try:
         # Vérifier les enregistrements A
@@ -267,7 +278,7 @@ def _verifier_dns(domaine: str, valeur_attendue: str) -> dict:
                 if cname:
                     result["valeur_trouvee"] = cname
                     result["type_enregistrement"] = "CNAME"
-                    if valeur_attendue and valeur_attendue.rstrip(".") in cname.rstrip("."):
+                    if valeur_attendue and valeur_attendue.rstrip(".") == cname.rstrip("."):
                         result["valide"] = True
             except Exception:
                 pass
@@ -276,7 +287,8 @@ def _verifier_dns(domaine: str, valeur_attendue: str) -> dict:
             result["erreur"] = "Aucun enregistrement DNS trouvé pour ce domaine"
 
     except Exception as e:
-        result["erreur"] = str(e)
+        logger.error(f"Erreur DNS pour {domaine}: {e}")
+        result["erreur"] = "Erreur lors de la vérification DNS"
 
     return result
 
@@ -318,6 +330,10 @@ async def ajouter_domaine(
     # Nettoyer le domaine
     domaine_clean = data.domaine.strip().lower()
     domaine_clean = domaine_clean.replace("https://", "").replace("http://", "").rstrip("/")
+
+    # Valider le format du domaine
+    if not _DOMAIN_RE.match(domaine_clean):
+        raise HTTPException(status_code=400, detail="Nom de domaine invalide")
 
     # Vérifier unicité
     existing = await db.execute(
@@ -362,7 +378,7 @@ async def verifier_domaine(
     dns_result = _verifier_dns(dom.domaine, dom.dns_valeur_attendue or "")
 
     dom.dns_valeur_actuelle = dns_result.get("valeur_trouvee")
-    dom.derniere_verif = datetime.utcnow()
+    dom.derniere_verif = datetime.now(timezone.utc)
     dom.statut = StatutDomaine.verifie if dns_result["valide"] else StatutDomaine.erreur
 
     await db.commit()

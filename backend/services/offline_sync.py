@@ -1,42 +1,57 @@
 """
 KAHLO CAFÉ — Offline Sync
 Mode terrain : ventes enregistrées sans internet → sync au retour
-Utilise Redis comme queue locale
+Utilise Redis (asyncio) comme queue locale
 """
 
 import json
-import redis
+import redis.asyncio as aioredis
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 logger = logging.getLogger(__name__)
-r = redis.from_url(os.getenv("REDIS_URL", "redis://redis:6379"))
 
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
 QUEUE_KEY = "kahlo:offline:queue"
 SYNC_STATUS_KEY = "kahlo:sync:status"
+
+
+def _get_redis() -> aioredis.Redis:
+    """Crée un client Redis async (lazy, une connexion par appel)."""
+    return aioredis.from_url(REDIS_URL, decode_responses=True)
 
 
 # ============================================================
 #  ENQUEUE — Côté frontend (en offline)
 # ============================================================
 
-def enqueue_vente(vente: dict) -> str:
+async def enqueue_vente(vente: dict) -> str:
     """
     Met une vente en file d'attente pour sync ultérieure
     Appelé quand le frontend détecte qu'il est offline
     """
-    vente["_queued_at"] = datetime.now().isoformat()
-    vente["_id"] = f"offline_{datetime.now().timestamp()}"
+    now = datetime.now(timezone.utc)
+    vente["_queued_at"] = now.isoformat()
+    vente["_id"] = f"offline_{now.timestamp()}"
 
-    r.rpush(QUEUE_KEY, json.dumps(vente))
+    r = _get_redis()
+    try:
+        await r.rpush(QUEUE_KEY, json.dumps(vente))
+    finally:
+        await r.aclose()
+
     logger.info(f"Vente mise en queue offline: {vente['_id']}")
     return vente["_id"]
 
 
-def get_queue_size() -> int:
+async def get_queue_size() -> int:
     """Retourne le nombre d'opérations en attente de sync"""
-    return r.llen(QUEUE_KEY)
+    r = _get_redis()
+    try:
+        return await r.llen(QUEUE_KEY)
+    finally:
+        await r.aclose()
 
 
 # ============================================================
@@ -52,44 +67,48 @@ async def sync_queue(db) -> dict:
     4. CRM
     5. Calendrier
     """
-    total = r.llen(QUEUE_KEY)
-    if total == 0:
-        return {"synced": 0, "errors": 0}
+    r = _get_redis()
+    try:
+        total = await r.llen(QUEUE_KEY)
+        if total == 0:
+            return {"synced": 0, "errors": 0}
 
-    synced = 0
-    errors = 0
-    erreur_details = []
+        synced = 0
+        errors = 0
+        erreur_details = []
 
-    r.set(SYNC_STATUS_KEY, json.dumps({"status": "syncing", "total": total, "done": 0}))
+        await r.set(SYNC_STATUS_KEY, json.dumps({"status": "syncing", "total": total, "done": 0}))
 
-    while r.llen(QUEUE_KEY) > 0:
-        raw = r.lindex(QUEUE_KEY, 0)  # Peek sans supprimer
-        try:
-            op = json.loads(raw)
-            await _process_operation(op, db)
-            r.lpop(QUEUE_KEY)  # Supprimer seulement si succès
-            synced += 1
+        while await r.llen(QUEUE_KEY) > 0:
+            raw = await r.lindex(QUEUE_KEY, 0)  # Peek sans supprimer
+            try:
+                op = json.loads(raw)
+                await _process_operation(op, db)
+                await r.lpop(QUEUE_KEY)  # Supprimer seulement si succès
+                synced += 1
 
-            # Mettre à jour le statut de sync
-            r.set(SYNC_STATUS_KEY, json.dumps({
-                "status": "syncing",
-                "total": total,
-                "done": synced
-            }))
+                # Mettre à jour le statut de sync
+                await r.set(SYNC_STATUS_KEY, json.dumps({
+                    "status": "syncing",
+                    "total": total,
+                    "done": synced
+                }))
 
-        except Exception as e:
-            logger.error(f"Erreur sync opération: {e}")
-            errors += 1
-            erreur_details.append({"op": str(op.get("type")), "error": str(e)})
+            except Exception as e:
+                logger.error(f"Erreur sync opération: {e}")
+                errors += 1
+                erreur_details.append({"op": str(op.get("type")), "error": str(e)})
 
-            # En cas d'erreur : déplacer en dead-letter queue
-            r.lpop(QUEUE_KEY)
-            r.rpush("kahlo:offline:failed", raw)
+                # En cas d'erreur : déplacer en dead-letter queue
+                await r.lpop(QUEUE_KEY)
+                await r.rpush("kahlo:offline:failed", raw)
 
-    r.set(SYNC_STATUS_KEY, json.dumps({"status": "done", "synced": synced, "errors": errors}))
+        await r.set(SYNC_STATUS_KEY, json.dumps({"status": "done", "synced": synced, "errors": errors}))
 
-    logger.info(f"Sync terminée: {synced} OK, {errors} erreurs")
-    return {"synced": synced, "errors": errors, "details": erreur_details}
+        logger.info(f"Sync terminée: {synced} OK, {errors} erreurs")
+        return {"synced": synced, "errors": errors, "details": erreur_details}
+    finally:
+        await r.aclose()
 
 
 async def _process_operation(op: dict, db):
@@ -151,7 +170,9 @@ async def _sync_remise(op: dict, db):
 async def _sync_client(op: dict, db):
     """Crée un nouveau client depuis une saisie offline"""
     from models import Client
-    client = Client(**op["data"])
+    _ALLOWED_CLIENT_FIELDS = {"prenom", "nom", "email", "telephone", "ville", "profil", "mouture_pref", "quantite_hab_g"}
+    data = {k: v for k, v in op.get("data", {}).items() if k in _ALLOWED_CLIENT_FIELDS}
+    client = Client(**data)
     db.add(client)
 
 
@@ -159,10 +180,15 @@ async def _sync_client(op: dict, db):
 #  STATUT SYNC (pour l'UI)
 # ============================================================
 
-def get_sync_status() -> dict:
-    raw = r.get(SYNC_STATUS_KEY)
-    if not raw:
-        return {"status": "idle", "queue_size": get_queue_size()}
-    status = json.loads(raw)
-    status["queue_size"] = get_queue_size()
-    return status
+async def get_sync_status() -> dict:
+    r = _get_redis()
+    try:
+        raw = await r.get(SYNC_STATUS_KEY)
+        if not raw:
+            queue_size = await r.llen(QUEUE_KEY)
+            return {"status": "idle", "queue_size": queue_size}
+        status = json.loads(raw)
+        status["queue_size"] = await r.llen(QUEUE_KEY)
+        return status
+    finally:
+        await r.aclose()

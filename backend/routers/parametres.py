@@ -8,6 +8,8 @@ sauf les champs non-secrets (emails, noms, délais).
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 import os
 import re
 import logging
@@ -17,11 +19,16 @@ from dotenv import dotenv_values, set_key
 
 logger = logging.getLogger(__name__)
 
-from routers.auth import verifier_token
+from database import get_db
+from routers.auth import verifier_token, require_admin, pwd_context
 
 router = APIRouter()
 
-ENV_PATH = Path(os.getenv("ENV_FILE_PATH", "/app/.env"))
+ENV_PATH = Path(os.getenv("ENV_FILE_PATH", "/app/.env")).resolve()
+# Sécurité : vérifier que le chemin reste dans /app/
+if not str(ENV_PATH).startswith("/app/"):
+    logger.error("ENV_FILE_PATH pointe hors de /app/ : %s — fallback sur /app/.env", ENV_PATH)
+    ENV_PATH = Path("/app/.env")
 
 
 # ============================================================
@@ -247,7 +254,8 @@ async def get_parametres(token: str = Depends(verifier_token)):
 @router.post("/")
 async def sauvegarder_parametres(
     data: TousParametres,
-    token: str = Depends(verifier_token)
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Sauvegarde les paramètres dans le .env.
@@ -341,9 +349,20 @@ async def sauvegarder_parametres(
         s = data.securite
         w("APP_USERNAME", s.username)
         if s.new_password and not _est_vide_ou_masque(s.new_password):
-            import bcrypt
-            hashed = bcrypt.hashpw(s.new_password.encode(), bcrypt.gensalt()).decode()
-            _ecrire_cle("APP_PASSWORD_HASH", hashed)
+            if len(s.new_password) < 8:
+                raise HTTPException(status_code=400, detail="Le mot de passe doit faire au moins 8 caractères")
+            # 1. Mettre à jour le mot de passe en DB immédiatement
+            from models import Utilisateur
+            admin_username = os.getenv("APP_USERNAME", "kahlo")
+            result_user = await db.execute(
+                select(Utilisateur).where(Utilisateur.username == admin_username)
+            )
+            admin_user = result_user.scalars().first()
+            if admin_user:
+                admin_user.password_hash = pwd_context.hash(s.new_password)
+                await db.commit()
+            # 2. Persister le hash dans .env (jamais le mot de passe en clair)
+            _ecrire_cle("APP_PASSWORD_HASH", pwd_context.hash(s.new_password))
         if s.secret_key and not _est_vide_ou_masque(s.secret_key):
             w("SECRET_KEY", s.secret_key)
         wb("SESSION_LONGUE", s.session_longue)
@@ -363,7 +382,7 @@ async def sauvegarder_parametres(
 # ============================================================
 
 @router.post("/tester-sumup")
-async def tester_sumup(token: str = Depends(verifier_token)):
+async def tester_sumup(admin: dict = Depends(require_admin)):
     from services.sumup import verifier_connexion
     ok = await verifier_connexion()
     if ok:
@@ -372,7 +391,7 @@ async def tester_sumup(token: str = Depends(verifier_token)):
 
 
 @router.post("/tester-brevo")
-async def tester_brevo(token: str = Depends(verifier_token)):
+async def tester_brevo(admin: dict = Depends(require_admin)):
     import httpx
     api_key = os.getenv("BREVO_API_KEY", "")
     if not api_key:
@@ -390,12 +409,13 @@ async def tester_brevo(token: str = Depends(verifier_token)):
             raise HTTPException(status_code=502, detail="Clé Brevo invalide")
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Erreur Brevo : {str(e)}")
+    except Exception:
+        logger.exception("Erreur lors du test Brevo")
+        raise HTTPException(status_code=502, detail="Impossible de joindre Brevo — vérifiez votre configuration")
 
 
 @router.post("/tester-gemini")
-async def tester_gemini(token: str = Depends(verifier_token)):
+async def tester_gemini(admin: dict = Depends(require_admin)):
     import httpx
     api_key = os.getenv("GEMINI_API_KEY", "")
     model   = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
@@ -404,7 +424,8 @@ async def tester_gemini(token: str = Depends(verifier_token)):
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                headers={"x-goog-api-key": api_key},
                 json={"contents": [{"parts": [{"text": "Réponds juste 'OK' en français."}]}]},
                 timeout=10
             )
@@ -413,8 +434,9 @@ async def tester_gemini(token: str = Depends(verifier_token)):
             raise HTTPException(status_code=502, detail="Clé Gemini invalide ou quota dépassé")
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Erreur Gemini : {str(e)}")
+    except Exception:
+        logger.exception("Erreur lors du test Gemini")
+        raise HTTPException(status_code=502, detail="Impossible de joindre Gemini — vérifiez votre configuration")
 
 
 # ============================================================
@@ -422,13 +444,19 @@ async def tester_gemini(token: str = Depends(verifier_token)):
 # ============================================================
 
 @router.post("/sauvegarde")
-async def sauvegarde_manuelle(token: str = Depends(verifier_token)):
+async def sauvegarde_manuelle(admin: dict = Depends(require_admin)):
     """Lance un dump PostgreSQL immédiat"""
-    import subprocess
+    import asyncio
     backup_path = os.getenv("BACKUP_PATH", "/backups/kahlo")
+    # Valider que le backup_path reste dans un répertoire sûr
+    resolved = os.path.realpath(backup_path)
+    _SAFE_PREFIXES = ("/backups/", "/app/backups/", "/tmp/")
+    if not any(resolved.startswith(p) for p in _SAFE_PREFIXES):
+        raise HTTPException(status_code=400, detail="Chemin de sauvegarde non autorisé")
+
     os.makedirs(backup_path, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    fichier = f"{backup_path}/kahlo-{timestamp}.sql.gz"
+    fichier = f"{backup_path}/kahlo-{timestamp}.dump"
     db_url = os.getenv("DATABASE_URL", "")
 
     # Extraire les infos de connexion depuis la DATABASE_URL
@@ -443,19 +471,26 @@ async def sauvegarde_manuelle(token: str = Depends(verifier_token)):
     env_copy = os.environ.copy()
     env_copy["PGPASSWORD"] = password
 
-    result = subprocess.run(
-        ["pg_dump", "-h", host, "-p", port, "-U", user, "-d", dbname, "-Fc"],
-        capture_output=True, env=env_copy, timeout=120
+    proc = await asyncio.create_subprocess_exec(
+        "pg_dump", "-h", host, "-p", port, "-U", user, "-d", dbname, "-Fc",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env_copy,
     )
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+    except asyncio.TimeoutError:
+        proc.kill()
+        raise HTTPException(status_code=500, detail="Timeout lors de la sauvegarde")
 
-    if result.returncode != 0:
-        logger.error(f"pg_dump echoue: {result.stderr.decode()}")
-        raise HTTPException(status_code=500, detail="Erreur lors de la sauvegarde de la base de donnees")
+    if proc.returncode != 0:
+        logger.error("pg_dump echoue (code %d): %s", proc.returncode, stderr.decode()[:200])
+        raise HTTPException(status_code=500, detail="Erreur lors de la sauvegarde de la base de données")
 
     with open(fichier, "wb") as f:
-        f.write(result.stdout)
+        f.write(stdout)
 
-    taille_ko = round(len(result.stdout) / 1024, 1)
+    taille_ko = round(len(stdout) / 1024, 1)
     return {
         "message": "Sauvegarde effectuée",
         "fichier": fichier,

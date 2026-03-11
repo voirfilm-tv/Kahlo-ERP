@@ -10,7 +10,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 import random
 import string
 import os
@@ -54,8 +54,9 @@ class ChangerStatut(BaseModel):
 # ============================================================
 
 def generer_numero() -> str:
-    seq = ''.join(random.choices(string.digits, k=4))
-    return f"CMD-{seq}"
+    date_part = datetime.now().strftime("%y%m")
+    seq = ''.join(random.choices(string.digits + string.ascii_uppercase, k=6))
+    return f"CMD-{date_part}-{seq}"
 
 def _serialise_commande(c: Commande, avec_lignes: bool = False) -> dict:
     d = {
@@ -243,7 +244,7 @@ async def changer_statut(
 ):
     result = await db.execute(
         select(Commande)
-        .options(selectinload(Commande.lignes))
+        .options(selectinload(Commande.lignes), selectinload(Commande.client), selectinload(Commande.marche))
         .where(Commande.id == commande_id)
     )
     commande = result.scalar_one_or_none()
@@ -253,7 +254,7 @@ async def changer_statut(
     ancien_statut = commande.statut
     commande.statut = data.statut
 
-    # En attente → Prête : notifier le client
+    # En attente → Prête : notifier le client (brevo accède commande.client et commande.marche)
     if data.statut == StatutCommande.prete and ancien_statut == StatutCommande.en_attente:
         try:
             await notifier_commande_prete(commande)
@@ -262,7 +263,7 @@ async def changer_statut(
 
     # → Remise : date réelle + facture PDF + tampon fidélité
     elif data.statut == StatutCommande.remise:
-        commande.date_remise_reelle = datetime.now()
+        commande.date_remise_reelle = datetime.now(timezone.utc)
 
         # Générer la facture PDF
         try:
@@ -277,8 +278,14 @@ async def changer_statut(
         client = await db.get(Client, commande.client_id)
         if client:
             client.tampons = (client.tampons or 0) + 1
-            # Auto-VIP à 5 achats
-            nb_achats = len([c for c in client.commandes if c.statut == StatutCommande.remise])
+            # Auto-VIP à 5 achats (count en DB, évite le lazy load)
+            result_nb = await db.execute(
+                select(func.count()).where(
+                    Commande.client_id == client.id,
+                    Commande.statut == StatutCommande.remise
+                )
+            )
+            nb_achats = result_nb.scalar() or 0
             if nb_achats >= 5:
                 client.vip = True
 
@@ -286,7 +293,9 @@ async def changer_statut(
     elif data.statut == StatutCommande.annulee:
         if commande.sumup_paid or commande.paiement_mode == "especes":
             for ligne in commande.lignes:
-                await decrementer_stock(db, ligne.lot_id, -(ligne.poids_g / 1000))
+                lot = await db.get(Lot, ligne.lot_id)
+                if lot:
+                    lot.stock_kg = (lot.stock_kg or 0) + (ligne.poids_g / 1000)
 
     await db.commit()
     return {"message": "Statut mis à jour", "statut": data.statut}
@@ -301,7 +310,7 @@ async def notifier_prete(commande_id: int, db: AsyncSession = Depends(get_db), t
     """Envoie (ou renvoie) la notification Brevo 'commande prête'"""
     result = await db.execute(
         select(Commande)
-        .options(selectinload(Commande.lignes))
+        .options(selectinload(Commande.lignes), selectinload(Commande.client), selectinload(Commande.marche))
         .where(Commande.id == commande_id)
     )
     commande = result.scalar_one_or_none()
@@ -311,8 +320,8 @@ async def notifier_prete(commande_id: int, db: AsyncSession = Depends(get_db), t
     try:
         await notifier_commande_prete(commande)
         return {"message": "Notification envoyée"}
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Erreur Brevo : {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=502, detail="Erreur lors de l'envoi de la notification")
 
 
 @router.post("/{commande_id}/checkout-sumup")
@@ -339,8 +348,8 @@ async def creer_lien_sumup(commande_id: int, db: AsyncSession = Depends(get_db),
         commande.sumup_checkout_id = checkout["checkout_id"]
         await db.commit()
         return checkout
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Erreur SumUp : {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=502, detail="Erreur lors de la création du checkout SumUp")
 
 
 @router.get("/{commande_id}/statut-paiement")

@@ -3,8 +3,9 @@ KAHLO CAFÉ — ERP Backend
 FastAPI — Point d'entrée principal
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import os
 
@@ -20,63 +21,77 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-async def _seed_fournisseurs():
-    """Insère les fournisseurs de départ s'il n'en existe aucun."""
-    from sqlalchemy import select, text
+async def _run_migrations():
+    """Applique les migrations Alembic (upgrade head).
+    Fallback sur create_all si Alembic échoue (ex: première installation).
+    """
+    try:
+        from alembic.config import Config
+        from alembic import command
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Migrations Alembic appliquées")
+    except Exception:
+        logger.warning("Alembic indisponible, fallback sur create_all")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+
+async def _seed_data():
+    """Insère les données initiales si la base est vierge (fournisseurs + admin)."""
+    from sqlalchemy import select
     from models import Fournisseur
+    from routers.auth import _init_admin_si_vide
 
     async with AsyncSessionLocal() as db:
+        # Seed fournisseurs
         result = await db.execute(select(Fournisseur).limit(1))
-        if result.scalars().first() is not None:
-            return
+        if result.scalars().first() is None:
+            seed = [
+                Fournisseur(nom="Café Imports Lyon", email="contact@cafeimports-lyon.fr", pays="France", delai_moyen=5, score=4.5),
+                Fournisseur(nom="Origine Direct", email="hello@origine-direct.com", pays="France", delai_moyen=7, score=4.8),
+                Fournisseur(nom="Terra Coffee", email="pro@terracoffee.eu", pays="Belgique", delai_moyen=10, score=4.2),
+            ]
+            db.add_all(seed)
+            await db.commit()
+            logger.info("Données initiales insérées (fournisseurs)")
 
-        seed = [
-            Fournisseur(nom="Café Imports Lyon", email="contact@cafeimports-lyon.fr", pays="France", delai_moyen=5, score=4.5),
-            Fournisseur(nom="Origine Direct", email="hello@origine-direct.com", pays="France", delai_moyen=7, score=4.8),
-            Fournisseur(nom="Terra Coffee", email="pro@terracoffee.eu", pays="Belgique", delai_moyen=10, score=4.2),
-        ]
-        db.add_all(seed)
-        await db.commit()
-
-        # Créer les index de performance (idem init.sql mais après CREATE TABLE)
-        async with engine.begin() as conn:
-            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_lots_origine ON lots(origine)"))
-            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_lots_actif ON lots(actif)"))
-            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_commandes_statut ON commandes(statut)"))
-            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_commandes_date ON commandes(date_commande)"))
-            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email)"))
-            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_evenements_date ON evenements(date_debut)"))
-            await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_marches_date ON marches(date)"))
-
-        logger.info("Données initiales insérées (fournisseurs + index)")
+        # Seed admin
+        await _init_admin_si_vide(db)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup : créer les tables puis seeder
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    await _seed_fournisseurs()
+    # Startup : persist secret → migrations → seed → scheduler
+    auth.persist_secret_key_if_needed()
+    await _run_migrations()
+    await _seed_data()
     start_scheduler()
     yield
     # Shutdown
 
 
+# Désactiver OpenAPI/docs en production (quand SECRET_KEY est configurée)
+_is_prod = os.getenv("SECRET_KEY", "") not in {"", "dev_key", "dev-secret-key-change-in-production", "changeme"}
+
 app = FastAPI(
     title="Kahlo Café ERP",
     description="Système de gestion interne — Kahlo Café Lyon",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url=None if _is_prod else "/docs",
+    redoc_url=None if _is_prod else "/redoc",
+    openapi_url=None if _is_prod else "/openapi.json",
 )
 
-# CORS — autoriser le frontend
+# CORS — autoriser le frontend uniquement
 _cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,https://erp.kahlocafe.fr")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in _cors_origins.split(",") if o.strip()],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # Routers
@@ -94,6 +109,16 @@ app.include_router(parametres.router,   prefix="/api/parametres",   tags=["Param
 app.include_router(utilisateurs.router, prefix="/api/utilisateurs", tags=["Utilisateurs"])
 
 
+# Global exception handler — empêche les stack traces en production
+@app.exception_handler(Exception)
+async def _global_exception_handler(request: Request, exc: Exception):
+    logger.exception("Erreur non gérée sur %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Erreur interne du serveur"},
+    )
+
+
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "service": "kahlo-erp"}
+    return {"status": "ok"}
