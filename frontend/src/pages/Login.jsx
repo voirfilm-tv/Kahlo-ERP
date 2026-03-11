@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { login } from "../services/api";
+import { login, extractError } from "../services/api";
 import { useAuthStore } from "../stores/auth";
 
 const C = {
@@ -23,8 +23,8 @@ export default function Login() {
       const data = await login(username, password);
       loginStore(data.access_token, data.role, data.username);
       navigate("/");
-    } catch {
-      setError("Identifiants incorrects");
+    } catch (err) {
+      setError(extractError(err, "Identifiants incorrects"));
     } finally {
       setLoading(false);
     }

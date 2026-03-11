@@ -6,6 +6,7 @@ import {
   getParametres, sauvegarderParametres, testerConnexionSumUp, testerConnexionBrevo, testerConnexionGemini, sauvegarderMaintenant,
   changerMotDePasse, getUtilisateurs, creerUtilisateur, modifierUtilisateur, supprimerUtilisateur,
   getDomaines, ajouterDomaine, verifierDomaine, modifierDomaine, supprimerDomaine,
+  extractError,
 } from "../services/api";
 
 const C = {
@@ -538,7 +539,9 @@ function SectionUtilisateurs() {
     try {
       const data = await getUtilisateurs();
       setUsers(data);
-    } catch { /* ignore */ }
+    } catch (e) {
+      setMsg({ ok: false, text: extractError(e, "Erreur lors du chargement des utilisateurs") });
+    }
     setLoading(false);
   };
 
@@ -720,7 +723,9 @@ function SectionDomaines() {
     try {
       const data = await getDomaines();
       setDomaines(data);
-    } catch { /* ignore */ }
+    } catch (e) {
+      setMsg({ ok: false, text: extractError(e, "Erreur lors du chargement des domaines") });
+    }
     setLoading(false);
   };
 
@@ -770,7 +775,9 @@ function SectionDomaines() {
     try {
       await modifierDomaine(dom.id, { ssl_actif: !dom.ssl_actif });
       charger();
-    } catch { /* ignore */ }
+    } catch (e) {
+      setMsg({ ok: false, text: extractError(e, "Erreur lors de la modification SSL") });
+    }
   };
 
   const statutBadge = (statut) => {
@@ -911,6 +918,21 @@ function SectionDomaines() {
 }
 
 function SectionSauvegarde({ cfg, set }) {
+  const [backupMsg, setBackupMsg] = useState(null);
+  const [backupLoading, setBackupLoading] = useState(false);
+
+  const handleBackupNow = async () => {
+    setBackupLoading(true);
+    setBackupMsg(null);
+    try {
+      await sauvegarderMaintenant();
+      setBackupMsg({ ok: true, text: "Sauvegarde effectuée avec succès" });
+    } catch (e) {
+      setBackupMsg({ ok: false, text: extractError(e, "Erreur lors de la sauvegarde") });
+    }
+    setBackupLoading(false);
+  };
+
   return (
     <div>
       <SectionTitle>Sauvegarde automatique</SectionTitle>
@@ -929,13 +951,11 @@ function SectionSauvegarde({ cfg, set }) {
         <Input value={cfg.backup_path} onChange={v => set("backup_path", v)} placeholder="/backups/kahlo" monospace />
       </Field>
 
-      <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
-        <button style={{ background: `linear-gradient(135deg, ${C.prune}, ${C.gold})`, border: "none", borderRadius: 10, padding: "10px 20px", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Outfit', sans-serif" }}>
-          ⬇ Sauvegarder maintenant
+      <div style={{ display: "flex", gap: 12, marginTop: 8, alignItems: "center" }}>
+        <button onClick={handleBackupNow} disabled={backupLoading} style={{ background: `linear-gradient(135deg, ${C.prune}, ${C.gold})`, border: "none", borderRadius: 10, padding: "10px 20px", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Outfit', sans-serif", opacity: backupLoading ? 0.7 : 1 }}>
+          {backupLoading ? "Sauvegarde..." : "⬇ Sauvegarder maintenant"}
         </button>
-        <button style={{ background: "rgba(193,138,74,0.08)", border: `1px solid rgba(193,138,74,0.2)`, borderRadius: 10, padding: "10px 20px", color: C.gold, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Outfit', sans-serif" }}>
-          ⬆ Restaurer un backup
-        </button>
+        {backupMsg && <span style={{ fontSize: 12, color: backupMsg.ok ? C.green : C.red }}>{backupMsg.ok ? "✓" : "✗"} {backupMsg.text}</span>}
       </div>
 
       <SectionTitle style={{ marginTop: 28 }}>Export des données</SectionTitle>
@@ -1002,9 +1022,9 @@ export default function KahloParametres() {
       setTimeout(() => setSaveMsg(null), 3000);
       qc.invalidateQueries({ queryKey: ["parametres"] });
     },
-    onError: () => {
-      setSaveMsg("✗ Erreur lors de la sauvegarde");
-      setTimeout(() => setSaveMsg(null), 3000);
+    onError: (err) => {
+      setSaveMsg(`✗ ${extractError(err, "Erreur lors de la sauvegarde")}`);
+      setTimeout(() => setSaveMsg(null), 5000);
     }
   });
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Layout from "../components/Layout";
-import { getEvenements, creerEvenement, supprimerEvenement, getBilanMarche, syncCalendrier } from "../services/api";
+import { getEvenements, creerEvenement, supprimerEvenement, getBilanMarche, syncCalendrier, extractError } from "../services/api";
 
 const C = {
   espresso: "#261810", gold: "#C18A4A", prune: "#6B3F57",
@@ -37,6 +37,7 @@ export default function Calendrier() {
   const [selected, setSelected] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [newEvt, setNewEvt] = useState({ titre: "", type: "marche", date: "", heure_debut: "08:00", heure_fin: "18:00", lieu: "", notes: "" });
+  const [toast, setToast] = useState(null);
 
   const debut = new Date(current.getFullYear(), current.getMonth(), 1);
   const fin   = new Date(current.getFullYear(), current.getMonth() + 1, 0);
@@ -59,16 +60,19 @@ export default function Calendrier() {
   const creerMutation = useMutation({
     mutationFn: creerEvenement,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["evenements"] }); setShowAdd(false); },
+    onError: (err) => setToast({ ok: false, text: extractError(err, "Erreur lors de la création") }),
   });
 
   const supprimerMutation = useMutation({
     mutationFn: supprimerEvenement,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["evenements"] }); setSelected(null); },
+    onError: (err) => setToast({ ok: false, text: extractError(err, "Erreur lors de la suppression") }),
   });
 
   const syncMutation = useMutation({
     mutationFn: syncCalendrier,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["evenements"] }); alert("Synchronisation effectuée"); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["evenements"] }); setToast({ ok: true, text: "Synchronisation effectuée" }); },
+    onError: (err) => setToast({ ok: false, text: extractError(err, "Erreur de synchronisation") }),
   });
 
   const evtsByDate = {};
@@ -138,6 +142,14 @@ export default function Calendrier() {
           </div>
         </div>
 
+        {/* Toast */}
+        {toast && (
+          <div style={{ padding: "10px 16px", borderRadius: 12, marginBottom: 16, fontSize: 12, display: "flex", justifyContent: "space-between", alignItems: "center", background: toast.ok ? "rgba(74,222,128,0.08)" : "rgba(232,160,184,0.08)", color: toast.ok ? "#4ade80" : "#e8a0b8", border: `1px solid ${toast.ok ? "rgba(74,222,128,0.2)" : "rgba(232,160,184,0.2)"}` }}>
+            <span>{toast.ok ? "✓" : "✗"} {toast.text}</span>
+            <button onClick={() => setToast(null)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 16 }}>×</button>
+          </div>
+        )}
+
         {/* Navigation + Tabs */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -166,7 +178,7 @@ export default function Calendrier() {
                   return (
                     <div key={i} className="day-cell"
                       style={{ background: isToday(d) ? "rgba(193,138,74,0.06)" : "transparent" }}
-                      onClick={() => d && setShowAdd(true) && setNewEvt(p => ({ ...p, date: k }))}>
+                      onClick={() => { if (d) { setNewEvt(p => ({ ...p, date: k })); setShowAdd(true); } }}>
                       {d && (
                         <>
                           <div style={{ fontSize: 11, fontWeight: isToday(d) ? 700 : 400, color: isToday(d) ? C.gold : "rgba(223,207,196,0.5)", marginBottom: 4, textAlign: "right" }}>{d}</div>

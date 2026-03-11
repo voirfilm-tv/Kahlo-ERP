@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Layout from "../components/Layout";
-import { getCommandes, creerCommande, changerStatutCommande, notifierClientPrete, getClients, getLots, getMarches, creerCheckoutSumUp } from "../services/api";
+import { getCommandes, creerCommande, changerStatutCommande, notifierClientPrete, getClients, getLots, getMarches, creerCheckoutSumUp, extractError, telechargerFichier } from "../services/api";
 
 const C = {
   espresso: "#261810", gold: "#C18A4A", prune: "#6B3F57",
@@ -28,6 +28,8 @@ export default function Commandes() {
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [newCmd, setNewCmd] = useState({ client_id: "", lot_id: "", poids_g: 250, mouture: "Grains entiers", paiement_mode: "sumup", notes: "" });
+  const [toast, setToast] = useState(null);
+  const EMPTY_CMD = { client_id: "", lot_id: "", poids_g: 250, mouture: "Grains entiers", paiement_mode: "sumup", notes: "" };
 
   const { data: commandes = [], isLoading } = useQuery({
     queryKey: ["commandes", filterStatut],
@@ -42,21 +44,24 @@ export default function Commandes() {
   const changerStatutMutation = useMutation({
     mutationFn: ({ id, statut }) => changerStatutCommande(id, statut),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["commandes"] }); if (selected) setSelected(null); },
+    onError: (err) => setToast({ ok: false, text: extractError(err, "Erreur lors du changement de statut") }),
   });
 
   const notifierMutation = useMutation({
     mutationFn: notifierClientPrete,
-    onSuccess: () => alert("Notification envoyée via Brevo"),
+    onSuccess: () => setToast({ ok: true, text: "Notification envoyée via Brevo" }),
+    onError: (err) => setToast({ ok: false, text: extractError(err, "Erreur lors de la notification") }),
   });
 
   const creerMutation = useMutation({
     mutationFn: (data) => creerCommande(data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["commandes"] }); setShowAdd(false); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["commandes"] }); setShowAdd(false); setNewCmd(EMPTY_CMD); },
   });
 
   const checkoutMutation = useMutation({
     mutationFn: creerCheckoutSumUp,
-    onSuccess: (data) => { alert(`Lien de paiement SumUp créé :\n${data.checkout_url}`); },
+    onSuccess: (data) => { setToast({ ok: true, text: `Lien SumUp créé : ${data.checkout_url}` }); },
+    onError: (err) => setToast({ ok: false, text: extractError(err, "Erreur lors de la création du lien SumUp") }),
   });
 
   const lotSelectionne = lots.find(l => l.id === parseInt(newCmd.lot_id));
@@ -109,6 +114,14 @@ export default function Commandes() {
           </div>
           <button className="btn-p" onClick={() => setShowAdd(true)}>+ Nouvelle commande</button>
         </div>
+
+        {/* Toast */}
+        {toast && (
+          <div style={{ padding: "10px 16px", borderRadius: 12, marginBottom: 16, fontSize: 12, display: "flex", justifyContent: "space-between", alignItems: "center", background: toast.ok ? "rgba(74,222,128,0.08)" : "rgba(232,160,184,0.08)", color: toast.ok ? "#4ade80" : "#e8a0b8", border: `1px solid ${toast.ok ? "rgba(74,222,128,0.2)" : "rgba(232,160,184,0.2)"}` }}>
+            <span>{toast.ok ? "✓" : "✗"} {toast.text}</span>
+            <button onClick={() => setToast(null)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 16 }}>×</button>
+          </div>
+        )}
 
         {/* KPIs */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 22 }}>
@@ -222,9 +235,10 @@ export default function Commandes() {
               <button className="btn-g" style={{ width: "100%", padding: 11 }} onClick={() => changerStatutMutation.mutate({ id: selected.id, statut: "remise" })}>✓ Marquer comme remise</button>
             </>}
             {selected.statut === "remise" && <>
-              <a href={`/api/commandes/${selected.id}/facture`} target="_blank" rel="noopener">
-                <button className="btn-g" style={{ width: "100%", padding: 11 }}>🧾 Télécharger facture PDF</button>
-              </a>
+              <button className="btn-g" style={{ width: "100%", padding: 11 }}
+                onClick={() => telechargerFichier(`/commandes/${selected.id}/facture`, `facture-${selected.numero}.pdf`)}>
+                🧾 Télécharger facture PDF
+              </button>
             </>}
             <button className="btn-g" style={{ width: "100%", padding: 11 }} onClick={() => changerStatutMutation.mutate({ id: selected.id, statut: "annulee" })}>✗ Annuler</button>
           </div>
@@ -308,7 +322,7 @@ export default function Commandes() {
               >
                 {creerMutation.isPending ? "Création..." : "Créer la commande"}
               </button>
-              {creerMutation.isError && <div style={{ fontSize: 12, color: "#e8a0b8" }}>Erreur lors de la création</div>}
+              {creerMutation.isError && <div style={{ fontSize: 12, color: "#e8a0b8" }}>{extractError(creerMutation.error, "Erreur lors de la création")}</div>}
             </div>
           </div>
         </div>

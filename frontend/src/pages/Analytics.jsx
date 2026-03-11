@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import Layout from "../components/Layout";
-import { getAnalyticsGeneral, getAnalyticsMarches, getAnalyticsOrigines, getAnalyticsClients, getAnalyseIA } from "../services/api";
+import { getAnalyticsGeneral, getAnalyticsMarches, getAnalyticsOrigines, getAnalyticsClients, getAnalyseIA, extractError } from "../services/api";
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 
 const C = {
@@ -49,6 +49,7 @@ export default function Analytics() {
   const iaMutation = useMutation({
     mutationFn: getAnalyseIA,
     onSuccess: (data) => setIaResult(data?.analyse || "Analyse indisponible."),
+    onError: (err) => setIaResult(`Erreur : ${extractError(err, "Impossible d'obtenir l'analyse IA")}`),
   });
 
   const caData = (general?.ca_mensuel || []).map(r => ({

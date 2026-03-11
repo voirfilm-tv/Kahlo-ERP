@@ -242,7 +242,7 @@ export default function Dashboard() {
                   <div key={c.id} onClick={() => navigate("/commandes")} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid rgba(223,207,196,0.05)`, cursor: "pointer" }}>
                     <div>
                       <div style={{ fontSize: 12, fontFamily: "monospace", color: "rgba(223,207,196,0.4)", marginBottom: 2 }}>{c.numero}</div>
-                      <div style={{ fontSize: 11, color: "rgba(223,207,196,0.5)" }}>{new Date(c.date_remise_prev).toLocaleDateString("fr-FR")}</div>
+                      <div style={{ fontSize: 11, color: "rgba(223,207,196,0.5)" }}>{c.date_remise_prev ? new Date(c.date_remise_prev).toLocaleDateString("fr-FR") : "—"}</div>
                     </div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: C.gold }}>{c.montant_total} €</div>
                   </div>
