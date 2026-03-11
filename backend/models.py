@@ -144,6 +144,8 @@ class Lot(Base):
 
     @property
     def marge_pct(self):
+        if not self.prix_vente_kg:
+            return 0
         return round(((self.prix_vente_kg - self.prix_achat_kg) / self.prix_vente_kg) * 100)
 
     @property
@@ -200,7 +202,7 @@ class Client(Base):
 
     @property
     def total_achats(self):
-        return sum(c.montant for c in self.commandes if c.statut != StatutCommande.annulee)
+        return sum(c.montant_total for c in self.commandes if c.statut != StatutCommande.annulee)
 
     @property
     def nb_achats(self):
@@ -296,13 +298,13 @@ class Marche(Base):
 
     @property
     def marge_nette(self):
-        if self.ca_realise and self.frais_reels:
+        if self.ca_realise is not None and self.frais_reels is not None:
             return self.ca_realise - self.frais_reels
         return None
 
     @property
     def taux_ecoulement(self):
-        if self.stock_emmene_kg and self.stock_ramene_kg:
+        if self.stock_emmene_kg is not None and self.stock_ramene_kg is not None and self.stock_emmene_kg > 0:
             vendu = self.stock_emmene_kg - self.stock_ramene_kg
             return round((vendu / self.stock_emmene_kg) * 100)
         return None

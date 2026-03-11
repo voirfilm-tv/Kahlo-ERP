@@ -307,7 +307,7 @@ def _html_facture(commande, client, lignes_enrichies: list) -> str:
     </div>
     <div class="doc-info">
       <div class="facture-label">FACTURE</div>
-      <div class="numero">{commande.numero}</div>
+      <div class="numero">{html_escape(str(commande.numero))}</div>
       <div class="date">Émise le {date_fmt}</div>
       {f'<div class="date">Remise le {remise_fmt}</div>' if commande.date_remise_reelle else ''}
     </div>
@@ -317,11 +317,11 @@ def _html_facture(commande, client, lignes_enrichies: list) -> str:
   <div class="parties">
     <div class="partie emetteur">
       <div class="partie-label">De</div>
-      <div class="partie-nom">{MARQUE['nom']}</div>
-      <div>{MARQUE['ville']}</div>
-      <div>{MARQUE['email']}</div>
-      {f"<div>{MARQUE['tel']}</div>" if MARQUE['tel'] else ''}
-      {f"<div>SIRET : {MARQUE['siret']}</div>" if MARQUE['siret'] else ''}
+      <div class="partie-nom">{html_escape(MARQUE['nom'])}</div>
+      <div>{html_escape(MARQUE['ville'])}</div>
+      <div>{html_escape(MARQUE['email'])}</div>
+      {f"<div>{html_escape(MARQUE['tel'])}</div>" if MARQUE['tel'] else ''}
+      {f"<div>SIRET : {html_escape(MARQUE['siret'])}</div>" if MARQUE['siret'] else ''}
     </div>
     <div class="partie destinataire">
       <div class="partie-label">Pour</div>
@@ -368,7 +368,7 @@ def _html_facture(commande, client, lignes_enrichies: list) -> str:
     <div>
       <div class="paiement-label">Mode de paiement</div>
       <div class="paiement-val">{"SumUp (carte bancaire)" if commande.paiement_mode == "sumup" else "Espèces"}</div>
-      {f'<div style="font-size:11px;color:#999;margin-top:2px;">Réf. {commande.sumup_transaction_code}</div>' if commande.sumup_transaction_code else ''}
+      {f'<div style="font-size:11px;color:#999;margin-top:2px;">Réf. {html_escape(str(commande.sumup_transaction_code))}</div>' if commande.sumup_transaction_code else ''}
     </div>
     <div class="statut-paye">✓ Payé</div>
   </div>
@@ -376,8 +376,8 @@ def _html_facture(commande, client, lignes_enrichies: list) -> str:
   <!-- PIED DE PAGE -->
   <div class="footer">
     <div class="merci">Merci pour votre confiance ☕</div>
-    <p>{MARQUE['nom']} — {MARQUE['ville']}</p>
-    <p>{MARQUE['email']}{f" · {MARQUE['tel']}" if MARQUE['tel'] else ''}</p>
+    <p>{html_escape(MARQUE['nom'])} — {html_escape(MARQUE['ville'])}</p>
+    <p>{html_escape(MARQUE['email'])}{f" · {html_escape(MARQUE['tel'])}" if MARQUE['tel'] else ''}</p>
     {siret_line}
     <p style="margin-top:8px;font-style:italic;color:#b0a090;">
       Auto-entrepreneur — TVA non applicable, article 293B du CGI
@@ -429,7 +429,7 @@ async def generer_facture_pdf(db: AsyncSession, commande) -> str:
             chemin_html.write_text(html, encoding="utf-8")
             raise RuntimeError("WeasyPrint non installé — fichier HTML généré en fallback")
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _generer)
 
     return str(chemin)

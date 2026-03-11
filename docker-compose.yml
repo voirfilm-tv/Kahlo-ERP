@@ -44,7 +44,7 @@ services:
     image: redis:7-alpine
     container_name: kahlo_redis
     restart: unless-stopped
-    command: redis-server --maxmemory 50mb --maxmemory-policy allkeys-lru --save ""
+    command: redis-server --maxmemory 50mb --maxmemory-policy allkeys-lru --save "" --requirepass "${REDIS_PASSWORD:-kahlo_redis_dev}"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -69,7 +69,7 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://kahlo:${POSTGRES_PASSWORD}@db:5432/kahlo
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:-kahlo_redis_dev}@redis:6379
       SUMUP_API_KEY: ${SUMUP_API_KEY}
       SUMUP_CLIENT_ID: ${SUMUP_CLIENT_ID}
       SUMUP_CLIENT_SECRET: ${SUMUP_CLIENT_SECRET}
@@ -78,7 +78,7 @@ services:
       BREVO_API_KEY: ${BREVO_API_KEY}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      SECRET_KEY: ${SECRET_KEY:-}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
       APP_USERNAME: ${APP_USERNAME:-kahlo}
       # NE PAS utiliser APP_PASSWORD_HASH avec Docker Compose (les $ cassent les hashes bcrypt)
       APP_DEFAULT_PASSWORD: ${APP_DEFAULT_PASSWORD:-changeme}

@@ -10,7 +10,9 @@ import os
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://kahlo:kahlo@db:5432/kahlo")
 
 # Convertir en async URL
-if DATABASE_URL.startswith("postgresql://"):
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 engine = create_async_engine(

@@ -7,7 +7,7 @@ Utilise Redis (asyncio) comme queue locale
 import json
 import redis.asyncio as aioredis
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 logger = logging.getLogger(__name__)
@@ -31,8 +31,9 @@ async def enqueue_vente(vente: dict) -> str:
     Met une vente en file d'attente pour sync ultérieure
     Appelé quand le frontend détecte qu'il est offline
     """
-    vente["_queued_at"] = datetime.now().isoformat()
-    vente["_id"] = f"offline_{datetime.now().timestamp()}"
+    now = datetime.now(timezone.utc)
+    vente["_queued_at"] = now.isoformat()
+    vente["_id"] = f"offline_{now.timestamp()}"
 
     r = _get_redis()
     try:
@@ -169,7 +170,9 @@ async def _sync_remise(op: dict, db):
 async def _sync_client(op: dict, db):
     """Crée un nouveau client depuis une saisie offline"""
     from models import Client
-    client = Client(**op["data"])
+    _ALLOWED_CLIENT_FIELDS = {"prenom", "nom", "email", "telephone", "ville", "profil", "mouture_pref", "quantite_hab_g"}
+    data = {k: v for k, v in op.get("data", {}).items() if k in _ALLOWED_CLIENT_FIELDS}
+    client = Client(**data)
     db.add(client)
 
 

@@ -13,13 +13,17 @@ scheduler = AsyncIOScheduler(timezone="Europe/Paris")
 
 def start_scheduler():
     """Démarre toutes les tâches planifiées"""
+    if scheduler.running:
+        logger.warning("Scheduler déjà en cours, skip")
+        return
 
     # Tous les matins à 8h
     scheduler.add_job(
         check_stocks_critiques,
         CronTrigger(hour=8, minute=0),
         id="check_stocks",
-        name="Vérification stocks critiques"
+        name="Vérification stocks critiques",
+        replace_existing=True,
     )
 
     # Tous les matins à 8h30 — anniversaires
@@ -27,7 +31,8 @@ def start_scheduler():
         check_anniversaires,
         CronTrigger(hour=8, minute=30),
         id="check_anniversaires",
-        name="Anniversaires clients J+14"
+        name="Anniversaires clients J+14",
+        replace_existing=True,
     )
 
     # Chaque dimanche à 9h — clients inactifs
@@ -35,7 +40,8 @@ def start_scheduler():
         check_clients_inactifs,
         CronTrigger(day_of_week="sun", hour=9),
         id="check_inactifs",
-        name="Relance clients inactifs"
+        name="Relance clients inactifs",
+        replace_existing=True,
     )
 
     # Chaque lundi à 7h — prévision de la semaine
@@ -43,7 +49,8 @@ def start_scheduler():
         prevision_semaine,
         CronTrigger(day_of_week="mon", hour=7),
         id="prevision_semaine",
-        name="Prévision hebdo"
+        name="Prévision hebdo",
+        replace_existing=True,
     )
 
     # Sync CalDAV toutes les 30 minutes
@@ -52,7 +59,8 @@ def start_scheduler():
         "interval",
         minutes=30,
         id="sync_caldav",
-        name="Sync CalDAV bidirectionnel"
+        name="Sync CalDAV bidirectionnel",
+        replace_existing=True,
     )
 
     scheduler.start()
@@ -111,12 +119,20 @@ async def check_anniversaires():
         for client in clients:
             if not client.anniversaire:
                 continue
-            anniv = client.anniversaire.replace(year=today.year).date()
+            try:
+                anniv_dt = client.anniversaire if isinstance(client.anniversaire, datetime) else datetime.combine(client.anniversaire, datetime.min.time())
+                anniv = anniv_dt.replace(year=today.year).date()
+            except ValueError:
+                # 29 février sur année non-bissextile
+                anniv = date(today.year, 3, 1)
             if anniv < today:
-                anniv = anniv.replace(year=today.year + 1)
+                try:
+                    anniv = anniv_dt.replace(year=today.year + 1).date()
+                except ValueError:
+                    anniv = date(today.year + 1, 3, 1)
 
             jours = (anniv - today).days
-            if jours == 7:  # Email 1 semaine avant
+            if 0 <= jours <= 7:  # Email jusqu'à 1 semaine avant
                 logger.info(f"🎂 Anniversaire dans 7j: {client.prenom} {client.nom}")
                 await envoyer_email_anniversaire(client)
 
@@ -130,10 +146,10 @@ async def check_clients_inactifs():
     from services.brevo import declencher_workflow_relance
     from sqlalchemy import select, func
     from sqlalchemy.orm import selectinload
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     logger.info("Vérification des clients inactifs...")
-    seuil = datetime.now() - timedelta(days=45)
+    seuil = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=45)
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(

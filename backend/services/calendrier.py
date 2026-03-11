@@ -22,7 +22,7 @@ CALDAV_PASSWORD = os.getenv("CALDAV_PASSWORD", "changeme")
 
 async def _run_sync(func, *args, **kwargs):
     """Exécute une fonction synchrone (CalDAV/Google) dans un thread pool."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, partial(func, *args, **kwargs))
 
 
@@ -148,7 +148,7 @@ def get_google_service(credentials_dict: dict):
 async def creer_evenement_google(credentials: dict, evenement: dict) -> str:
     """Crée un événement Google Calendar"""
     try:
-        service = get_google_service(credentials)
+        service = await _run_sync(get_google_service, credentials)
 
         google_event = {
             "summary": evenement["titre"],
@@ -167,10 +167,9 @@ async def creer_evenement_google(credentials: dict, evenement: dict) -> str:
             "colorId": _color_for_type(evenement.get("type", "rappel")),
         }
 
-        result = service.events().insert(
-            calendarId="primary",
-            body=google_event
-        ).execute()
+        result = await _run_sync(
+            service.events().insert(calendarId="primary", body=google_event).execute
+        )
 
         logger.info(f"Événement Google Calendar créé: {result['id']}")
         return result["id"]
@@ -183,16 +182,18 @@ async def creer_evenement_google(credentials: dict, evenement: dict) -> str:
 async def sync_google_vers_db(credentials: dict, db) -> list:
     """Récupère les nouveaux événements Google Calendar et les importe"""
     try:
-        service = get_google_service(credentials)
+        service = await _run_sync(get_google_service, credentials)
         now = datetime.now(timezone.utc).isoformat()
 
-        events_result = service.events().list(
-            calendarId="primary",
-            timeMin=now,
-            maxResults=50,
-            singleEvents=True,
-            orderBy="startTime"
-        ).execute()
+        events_result = await _run_sync(
+            service.events().list(
+                calendarId="primary",
+                timeMin=now,
+                maxResults=50,
+                singleEvents=True,
+                orderBy="startTime"
+            ).execute
+        )
 
         events = events_result.get("items", [])
         nouveaux = []
@@ -234,9 +235,10 @@ async def creer_evenement_remise(db, commande):
     """
     from models import Evenement, TypeEvenement
 
+    client_label = f"{commande.client.prenom} {commande.client.nom}" if commande.client else "Client"
     evenement = Evenement(
         type=TypeEvenement.commande,
-        titre=f"Remise — {commande.client.prenom} {commande.client.nom}",
+        titre=f"Remise — {client_label}",
         date_debut=commande.date_remise_prev,
         commande_id=commande.id,
         notes=f"Commande {commande.numero} · {commande.montant_total} €",
