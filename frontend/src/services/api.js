@@ -312,6 +312,20 @@ export const modifierDomaine = (id, data) =>
 export const supprimerDomaine = (id) =>
   api.delete(`/utilisateurs/domaines/${id}`).then((r) => r.data);
 
+
+// ────────────────────────────────────────────────────────────
+//  MISE À JOUR LOGICIELLE (ADMIN)
+// ────────────────────────────────────────────────────────────
+
+export const getSystemUpdateStatus = () =>
+  api.get("/system-update/status").then((r) => r.data);
+
+export const verifierMiseAJourSysteme = () =>
+  api.post("/system-update/check").then((r) => r.data);
+
+export const lancerMiseAJourSysteme = (targetVersion) =>
+  api.post("/system-update/start", { target_version: targetVersion }).then((r) => r.data);
+
 // ────────────────────────────────────────────────────────────
 //  SYNC OFFLINE
 // ────────────────────────────────────────────────────────────
