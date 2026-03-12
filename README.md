@@ -61,6 +61,18 @@ cd frontend
 npm run build
 ```
 
+## CI (GitHub Actions)
+
+Une CI minimale et robuste est définie dans `.github/workflows/ci.yml` (push + pull request).
+
+Elle vérifie automatiquement :
+- installation backend + tests `pytest`,
+- migrations Alembic sur PostgreSQL vierge,
+- build frontend Vite,
+- build de l'image Docker backend.
+
+Voir la documentation détaillée et la reproduction locale : `docs/ci.md`.
+
 ## Production (résumé)
 
 - Nginx sert de reverse proxy (service `nginx`).
