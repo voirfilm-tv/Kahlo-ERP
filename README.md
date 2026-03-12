@@ -83,6 +83,16 @@ Voir la documentation détaillée et la reproduction locale : `docs/ci.md`.
   docker compose up -d --build
   ```
 
+
+## Mise à jour logicielle (admin)
+
+Une section **Paramètres > Mise à jour** permet de :
+- vérifier la version installée vs la dernière release GitHub,
+- lancer une mise à jour si l'environnement serveur le permet,
+- sinon afficher un mode semi-automatique avec commandes sûres.
+
+Documentation complète : `docs/software-update.md`.
+
 ## Exploitation
 
 Logs:
