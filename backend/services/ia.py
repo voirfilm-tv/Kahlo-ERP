@@ -7,7 +7,6 @@ Modèle : gemini-1.5-flash (gratuit, excellent en français)
 import google.generativeai as genai
 import os
 import json
-from typing import Optional
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 model = genai.GenerativeModel("gemini-1.5-flash")
