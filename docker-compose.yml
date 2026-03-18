@@ -136,7 +136,7 @@ services:
   # ----------------------------------------------------------
   caldav:
     # Build local : élimine le risque supply-chain (image tierce)
-    # Radicale 3.3.3.1 est installé via pip dans caldav/Dockerfile
+    # Radicale 3.3.3 est installé via pip dans caldav/Dockerfile
     build: ./caldav
     container_name: kahlo_caldav
     restart: unless-stopped
