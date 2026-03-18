@@ -11,6 +11,14 @@ cp .env.example .env
 docker compose up --build
 ```
 
+Services démarrés:
+- **nginx** — point d'entrée / reverse proxy
+- **frontend** — React build statique (Vite)
+- **backend** — FastAPI
+- **db** — PostgreSQL
+- **redis**
+- **caldav** — Radicale
+
 Application:
 - Frontend: `http://localhost`
 - API: `http://localhost/api`
@@ -22,20 +30,25 @@ Application:
 
 La référence exhaustive et documentée est `./.env.example`.
 
+Groupes de variables:
+- **Infrastructure**: `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `HTTP_PORT`, `HTTPS_PORT`
+- **Sécurité**: `SECRET_KEY`, `APP_USERNAME`, `APP_DEFAULT_PASSWORD`, `ADMIN_FORCE_RESET`, `SESSION_HOURS`, `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_SECONDS`
+- **CORS/API**: `CORS_ORIGINS`, `DATABASE_URL`, `REDIS_URL`
+- **Intégrations**: `SUMUP_*`, `BREVO_*`, `GEMINI_*`, `GOOGLE_*`, `CALDAV_*`
+- **Métier**: `BOUTIQUE_*`, `OBJECTIF_CA_MENSUEL`, `STOCK_*`, `CRM_*`
+- **Exploitation**: `BACKUP_*`, `FACTURES_DIR`
+
 Variables minimales à adapter avant production:
-- `POSTGRES_PASSWORD`
-- `REDIS_PASSWORD`
-- `SECRET_KEY`
-- `APP_DEFAULT_PASSWORD`
-- `CALDAV_PASSWORD`
-- `CORS_ORIGINS`
+- `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `SECRET_KEY`, `APP_DEFAULT_PASSWORD`, `CALDAV_PASSWORD`, `CORS_ORIGINS`
 - `BIND_HOST` (laisser `127.0.0.1` derrière un reverse proxy externe)
+- `CORS_ORIGINS` limité aux domaines front réels
+- Secrets API non vides seulement si intégration activée
 
 ## Admin
 
 Au premier démarrage, si la table `utilisateurs` est vide:
 - création auto de l'admin `APP_USERNAME`
-- mot de passe `APP_DEFAULT_PASSWORD`
+- mot de passe `APP_DEFAULT_PASSWORD` (ou `APP_PASSWORD_HASH`)
 
 Reset forcé admin:
 1. définir `ADMIN_FORCE_RESET=true`
@@ -99,6 +112,7 @@ Logs:
 ```bash
 docker compose logs -f backend
 docker compose logs -f nginx
+docker compose logs -f db
 ```
 
 Sauvegarde DB:
@@ -110,6 +124,11 @@ Restauration:
 ```bash
 cat backup.sql | docker compose exec -T db psql -U kahlo kahlo
 ```
+
+Rotation secrets:
+1. Modifier les valeurs dans `.env`
+2. Redéployer: `docker compose up -d --build`
+3. Changement de `SECRET_KEY` invalide toutes les sessions actives
 
 ⚠️ Les dumps applicatifs backend sont écrits dans le volume persistant `backups_data` monté sur `/backups/kahlo`.
 
