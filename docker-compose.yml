@@ -77,8 +77,8 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://kahlo:${POSTGRES_PASSWORD}@db:5432/kahlo
-      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@redis:6379
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
       SUMUP_API_KEY: ${SUMUP_API_KEY}
       SUMUP_CLIENT_ID: ${SUMUP_CLIENT_ID}
       SUMUP_CLIENT_SECRET: ${SUMUP_CLIENT_SECRET}
