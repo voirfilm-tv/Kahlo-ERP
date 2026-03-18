@@ -69,19 +69,25 @@ async def _wait_for_redis():
 
 
 async def _run_migrations():
-    """Applique les migrations Alembic (upgrade head).
-    Fallback sur create_all si Alembic échoue (ex: première installation).
+    """Applique les migrations Alembic (upgrade head) dans un thread executor.
+    Fallback sur create_all si Alembic échoue.
     """
-    try:
+    import asyncio
+    from functools import partial
+    def _run_alembic():
         from alembic.config import Config
         from alembic import command
         alembic_cfg = Config("alembic.ini")
         command.upgrade(alembic_cfg, "head")
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _run_alembic)
         logger.info("Migrations Alembic appliquées")
-    except Exception:
-        logger.warning("Alembic indisponible, fallback sur create_all")
+    except Exception as e:
+        logger.warning("Alembic indisponible (%s), fallback sur create_all", e)
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+        logger.info("Tables créées via create_all")
 
 
 async def _seed_data():
