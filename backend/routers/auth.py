@@ -1,6 +1,6 @@
-"""KAHLO CAFÉ — Auth JWT multi-utilisateurs"""
+"""KAHLO CAFÉ — Auth JWT multi-utilisateurs (HttpOnly cookie + CSRF)"""
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request, Response, Cookie
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, field_validator
 from jose import jwt, JWTError
@@ -74,6 +74,11 @@ if SECRET_KEY in _INSECURE_SECRETS:
 
 ALGORITHM = "HS256"
 SESSION_HOURS = int(os.getenv("SESSION_HOURS", "8"))
+_COOKIE_NAME = "kahlo_session"
+_CSRF_COOKIE_NAME = "kahlo_csrf"
+_CSRF_HEADER_NAME = "x-csrf-token"
+_is_prod = os.getenv("SECRET_KEY", "") not in {"", "dev_key", "dev-secret-key-change-in-production", "changeme"}
+_COOKIE_SECURE = _is_prod  # True en production (HTTPS), False en dev
 
 
 # ============================================================
@@ -238,7 +243,7 @@ def _record_failed_attempt(key: str):
 
 
 @router.post("/login")
-async def login(data: LoginData, db: AsyncSession = Depends(get_db)):
+async def login(data: LoginData, response: Response, db: AsyncSession = Depends(get_db)):
     _check_rate_limit(data.username)
 
     result = await db.execute(
@@ -255,6 +260,7 @@ async def login(data: LoginData, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Identifiants incorrects")
 
     now = datetime.now(timezone.utc)
+    csrf_token = _secrets.token_hex(32)
     token = jwt.encode(
         {
             "sub": user.username,
@@ -263,42 +269,113 @@ async def login(data: LoginData, db: AsyncSession = Depends(get_db)):
             "iat": now,
             "exp": now + timedelta(hours=SESSION_HOURS),
             "jti": _secrets.token_hex(16),
+            "csrf": csrf_token,
         },
         SECRET_KEY, algorithm=ALGORITHM
     )
+
+    # JWT dans un cookie HttpOnly (inaccessible au JS → protège contre XSS)
+    max_age = SESSION_HOURS * 3600
+    response.set_cookie(
+        key=_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=_COOKIE_SECURE,
+        samesite="lax",
+        max_age=max_age,
+        path="/",
+    )
+    # CSRF token dans un cookie lisible par le JS (non HttpOnly)
+    # Le frontend le lit et le renvoie dans le header X-CSRF-Token
+    response.set_cookie(
+        key=_CSRF_COOKIE_NAME,
+        value=csrf_token,
+        httponly=False,
+        secure=_COOKIE_SECURE,
+        samesite="lax",
+        max_age=max_age,
+        path="/",
+    )
+
     return {
-        "access_token": token,
-        "token_type": "bearer",
         "role": user.role.value,
         "username": user.username,
     }
 
 
+@router.post("/logout")
+async def logout(response: Response):
+    response.delete_cookie(_COOKIE_NAME, path="/")
+    response.delete_cookie(_CSRF_COOKIE_NAME, path="/")
+    return {"detail": "Déconnecté"}
+
+
 # ============================================================
 #  MIDDLEWARE D'AUTH (dependencies)
+#  Lit le JWT depuis le cookie HttpOnly + vérifie le CSRF
 # ============================================================
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+def _extract_token(request: Request) -> str:
+    """Extrait le JWT depuis le cookie HttpOnly ou le header Authorization (fallback)."""
+    # 1. Cookie HttpOnly (prioritaire, sécurisé)
+    token = request.cookies.get(_COOKIE_NAME)
+    if token:
+        return token
+
+    # 2. Fallback header Authorization (pour les outils/tests/API externes)
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header[7:]
+
+    raise HTTPException(status_code=401, detail="Token manquant")
+
+
+def _verify_csrf(request: Request, payload: dict):
+    """Vérifie le CSRF token pour les requêtes mutatives depuis un navigateur."""
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return  # Pas de CSRF pour les requêtes idempotentes
+
+    # Si la requête vient d'un header Authorization (API/tests), pas de CSRF requis
+    if request.headers.get("authorization", "").startswith("Bearer "):
+        return
+
+    # Vérifier le CSRF token uniquement pour les requêtes cookie-based
+    if _COOKIE_NAME not in request.cookies:
+        return
+
+    csrf_from_header = request.headers.get(_CSRF_HEADER_NAME, "")
+    csrf_from_jwt = payload.get("csrf", "")
+    if not csrf_from_header or not csrf_from_jwt or csrf_from_header != csrf_from_jwt:
+        raise HTTPException(status_code=403, detail="CSRF token invalide")
+
+
+async def get_current_user(request: Request):
+    token = _extract_token(request)
     try:
-        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        _verify_csrf(request, payload)
         return payload["sub"]
     except JWTError:
         raise HTTPException(status_code=401, detail="Token invalide ou expiré")
 
 
-def get_current_user_payload(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_current_user_payload(request: Request):
     """Retourne le payload complet du JWT (sub, user_id, role)."""
+    token = _extract_token(request)
     try:
-        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        _verify_csrf(request, payload)
         return payload
     except JWTError:
         raise HTTPException(status_code=401, detail="Token invalide ou expiré")
 
 
-def require_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def require_admin(request: Request):
     """Vérifie que l'utilisateur est admin."""
+    token = _extract_token(request)
     try:
-        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        _verify_csrf(request, payload)
         if payload.get("role") != "admin":
             raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs")
         return payload

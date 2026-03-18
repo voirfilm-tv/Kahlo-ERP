@@ -38,6 +38,9 @@ async def enqueue_vente(vente: dict) -> str:
     r = _get_redis()
     try:
         await r.rpush(QUEUE_KEY, json.dumps(vente))
+    except Exception as e:
+        logger.error("Redis indisponible pour enqueue: %s", e)
+        raise
     finally:
         await r.aclose()
 
@@ -50,6 +53,9 @@ async def get_queue_size() -> int:
     r = _get_redis()
     try:
         return await r.llen(QUEUE_KEY)
+    except Exception as e:
+        logger.warning("Redis indisponible pour get_queue_size: %s", e)
+        return 0
     finally:
         await r.aclose()
 
@@ -190,5 +196,8 @@ async def get_sync_status() -> dict:
         status = json.loads(raw)
         status["queue_size"] = await r.llen(QUEUE_KEY)
         return status
+    except Exception as e:
+        logger.warning("Redis indisponible pour get_sync_status: %s", e)
+        return {"status": "redis_unavailable", "queue_size": 0}
     finally:
         await r.aclose()

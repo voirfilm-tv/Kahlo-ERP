@@ -241,7 +241,7 @@ pytest -v
 
 | Fichier | Couverture |
 |---|---|
-| `test_auth.py` | Login, JWT, rate limiting, tokens |
+| `test_auth.py` | Login, JWT, cookies HttpOnly, CSRF, logout, rate limiting |
 | `test_stock.py` | CRUD lots, alertes, marges |
 | `test_clients.py` | CRM, profils, fidélité |
 | `test_commandes.py` | Commandes, lignes, statuts |
@@ -355,7 +355,7 @@ Le script `start.sh prod` vérifie que les secrets par défaut ont été changé
 
 ### Mesures en place
 
-- **Authentification JWT** sur toutes les routes `/api/*` (sauf `/api/health` et `/api/webhooks/sumup`)
+- **Authentification JWT via cookie HttpOnly** (protège contre XSS) + **CSRF double-submit cookie** sur toutes les routes `/api/*` (sauf `/api/health` et `/api/webhooks/sumup`)
 - **Rate limiting** : 5 tentatives de login / 5 minutes par utilisateur, protection contre les noms d'utilisateur aléatoires (cap à 10 000 clés)
 - **Webhooks SumUp** : vérification HMAC-SHA256 de la signature
 - **Backend non-root** : le conteneur tourne avec l'utilisateur `appuser`

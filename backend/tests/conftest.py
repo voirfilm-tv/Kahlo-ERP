@@ -180,13 +180,15 @@ async def admin_user(db: AsyncSession):
 
 @pytest_asyncio.fixture
 async def admin_token(client: AsyncClient, admin_user) -> str:
-    """Connecte l'admin et retourne le token JWT."""
+    """Connecte l'admin et retourne le token JWT (extrait du cookie)."""
     resp = await client.post("/api/auth/login", json={
         "username": "admin",
         "password": "testpassword123",
     })
     assert resp.status_code == 200, f"Login failed: {resp.text}"
-    return resp.json()["access_token"]
+    token = resp.cookies.get("kahlo_session")
+    assert token, "Cookie kahlo_session absent de la réponse login"
+    return token
 
 
 @pytest_asyncio.fixture

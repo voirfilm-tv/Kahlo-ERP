@@ -1,4 +1,4 @@
-"""Tests — Authentification, JWT, rate limiting"""
+"""Tests — Authentification, JWT (cookie HttpOnly + CSRF), rate limiting"""
 
 import pytest
 from httpx import AsyncClient
@@ -12,10 +12,12 @@ class TestLogin:
         })
         assert resp.status_code == 200
         data = resp.json()
-        assert "access_token" in data
-        assert data["token_type"] == "bearer"
         assert data["role"] == "admin"
         assert data["username"] == "admin"
+        # Le JWT est dans un cookie HttpOnly
+        assert "kahlo_session" in resp.cookies
+        # Le CSRF token est dans un cookie non-HttpOnly
+        assert "kahlo_csrf" in resp.cookies
 
     async def test_login_wrong_password(self, client: AsyncClient, admin_user):
         resp = await client.post("/api/auth/login", json={
@@ -64,6 +66,19 @@ class TestLogin:
             "password": "test12345",
         })
         assert resp.status_code == 401
+
+
+class TestLogout:
+    async def test_logout_clears_cookies(self, client: AsyncClient, admin_user):
+        # Login d'abord
+        await client.post("/api/auth/login", json={
+            "username": "admin",
+            "password": "testpassword123",
+        })
+        # Logout
+        resp = await client.post("/api/auth/logout")
+        assert resp.status_code == 200
+        assert resp.json()["detail"] == "Déconnecté"
 
 
 class TestRateLimiting:
