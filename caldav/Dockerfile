@@ -7,7 +7,8 @@
 
 FROM python:3.12-alpine
 
-RUN pip install --no-cache-dir radicale==3.3.3.1 bcrypt passlib[bcrypt]
+RUN apk add --no-cache apache2-utils && \
+    pip install --no-cache-dir radicale==3.3.3 bcrypt passlib[bcrypt]
 
 RUN adduser -D radicale && mkdir -p /data && chown radicale:radicale /data
 
