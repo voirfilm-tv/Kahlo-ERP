@@ -1,6 +1,6 @@
-# Kahlo Café — ERP
+# Kahlo ERP
 
-Système de gestion interne sur-mesure pour Kahlo Café, marque de café artisanal lyonnaise.
+ERP interne Kahlo Café (FastAPI + PostgreSQL + Redis + React/Vite + Nginx + Docker Compose).
 
 ---
 
@@ -63,10 +63,21 @@ docker compose up --build
 
 C'est tout. L'application est disponible sur **http://localhost**.
 
+Services démarrés:
+- **nginx** — point d'entrée / reverse proxy
+- **frontend** — React build statique (Vite)
+- **backend** — FastAPI
+- **db** — PostgreSQL
+- **redis**
+- **caldav** — Radicale
+
+Accès:
 - Interface web : http://localhost
 - API docs (dev uniquement) : http://localhost/api/docs
 - CalDAV : http://localhost/caldav/
 - Health check : http://localhost/api/health
+
+> Le script `start.sh` est conservé pour la commodité locale, mais la commande de référence pour la livraison reste `docker compose up --build`.
 
 ### Connexion initiale
 
@@ -79,7 +90,7 @@ C'est tout. L'application est disponible sur **http://localhost**.
 
 ## Variables d'environnement
 
-Toutes les variables sont documentées dans `.env.example`. Voici la référence complète :
+La référence exhaustive et documentée est `./.env.example`. Voici les groupes principaux :
 
 ### Obligatoires
 
@@ -129,13 +140,20 @@ Toutes les variables sont documentées dans `.env.example`. Voici la référence
 | `HTTP_PORT` | Port HTTP exposé | `80` |
 | `HTTPS_PORT` | Port HTTPS exposé | `443` |
 
+Variables minimales à adapter avant production:
+- `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `SECRET_KEY`, `APP_DEFAULT_PASSWORD`, `CALDAV_PASSWORD`, `CORS_ORIGINS`
+- `BIND_HOST` (laisser `127.0.0.1` derrière un reverse proxy externe)
+- Secrets API non vides seulement si intégration activée
+
 ---
 
-## Administration
+## Admin
 
 ### Création de l'admin initial
 
-L'admin est créé automatiquement au premier démarrage si la table `utilisateurs` est vide. Les identifiants proviennent de `APP_USERNAME` et `APP_DEFAULT_PASSWORD` dans `.env`.
+Au premier démarrage, si la table `utilisateurs` est vide :
+- création auto de l'admin `APP_USERNAME`
+- mot de passe `APP_DEFAULT_PASSWORD` (ou `APP_PASSWORD_HASH`)
 
 ### Reset du mot de passe admin
 
@@ -169,13 +187,11 @@ docker compose exec backend python -c \
 
 ---
 
-## Migrations de base de données
+## Migrations et seed
 
-Le schéma est géré par **Alembic** (migrations versionnées).
-
-### Fonctionnement
-
-Au démarrage, le backend exécute automatiquement `alembic upgrade head`. Si Alembic échoue (première installation sans migration), il fait un fallback sur `Base.metadata.create_all`.
+- Le backend applique `alembic upgrade head` au démarrage.
+- En fallback, `Base.metadata.create_all()` est utilisé si Alembic échoue.
+- Seed initial: fournisseurs + admin bootstrap.
 
 ### Créer une nouvelle migration
 
@@ -193,26 +209,7 @@ alembic upgrade head
 alembic downgrade -1
 ```
 
-### Migration initiale
-
-Le fichier `backend/alembic/versions/e657bae136a6_initial_schema.py` contient le schéma complet. Les nouvelles migrations sont ajoutées dans le même dossier.
-
----
-
-## Stratégie de seed
-
-Au premier démarrage, `main.py` insère automatiquement :
-
-1. **3 fournisseurs de démonstration** : Café Imports Lyon, Origine Direct, Terra Coffee
-2. **Le compte admin** avec les identifiants de `.env`
-
-Le seed ne s'exécute que si les tables sont vides (idempotent). Pour re-seeder :
-
-```bash
-# Supprimer les données et recréer
-docker compose down -v
-docker compose up --build
-```
+Le fichier `backend/alembic/versions/e657bae136a6_initial_schema.py` contient le schéma complet.
 
 ---
 
@@ -222,6 +219,7 @@ Les tests utilisent **pytest** avec une base SQLite en mémoire. Les services ex
 
 ### Exécuter les tests
 
+Backend:
 ```bash
 # Depuis l'hôte
 docker compose exec backend pytest -v
@@ -232,9 +230,15 @@ docker compose exec backend pytest --cov=. --cov-report=term-missing
 # Un fichier spécifique
 docker compose exec backend pytest tests/test_auth.py -v
 
-# Sans Docker (nécessite les dépendances Python installées)
+# Sans Docker
 cd backend
 pytest -v
+```
+
+Frontend:
+```bash
+cd frontend
+npm run build
 ```
 
 ### Suites de tests disponibles
@@ -246,6 +250,20 @@ pytest -v
 | `test_clients.py` | CRM, profils, fidélité |
 | `test_commandes.py` | Commandes, lignes, statuts |
 | `test_marches_calendrier_analytics.py` | Marchés, événements, KPIs |
+
+---
+
+## CI (GitHub Actions)
+
+Une CI minimale et robuste est définie dans `.github/workflows/ci.yml` (push + pull request).
+
+Elle vérifie automatiquement :
+- installation backend + tests `pytest`,
+- migrations Alembic sur PostgreSQL vierge,
+- build frontend Vite,
+- build de l'image Docker backend.
+
+Voir la documentation détaillée et la reproduction locale : `docs/ci.md`.
 
 ---
 
@@ -344,10 +362,19 @@ CALDAV_PASSWORD=<mot_de_passe_caldav_fort>
 CORS_ORIGINS=https://erp.kahlocafe.fr
 
 # 4. Lancer en production
-./start.sh prod
+docker compose up -d --build
 ```
 
-Le script `start.sh prod` vérifie que les secrets par défaut ont été changés avant de démarrer.
+---
+
+## Mise à jour logicielle (admin)
+
+Une section **Paramètres > Mise à jour** permet de :
+- vérifier la version installée vs la dernière release GitHub,
+- lancer une mise à jour si l'environnement serveur le permet,
+- sinon afficher un mode semi-automatique avec commandes sûres.
+
+Documentation complète : `docs/software-update.md`.
 
 ---
 
@@ -374,19 +401,11 @@ Le script `start.sh prod` vérifie que les secrets par défaut ont été changé
 - Sauvegarder régulièrement la base PostgreSQL
 - Surveiller les logs : `docker compose logs -f backend`
 
-### Sauvegarde et restauration
-
-```bash
-# Sauvegarde
-docker compose exec db pg_dump -U kahlo kahlo > backup_$(date +%Y%m%d).sql
-
-# Restauration
-cat backup.sql | docker compose exec -T db psql -U kahlo kahlo
-```
-
 ---
 
-## Commandes utiles
+## Exploitation
+
+### Commandes utiles
 
 ```bash
 # Démarrer en dev (avec logs)
@@ -394,14 +413,16 @@ cat backup.sql | docker compose exec -T db psql -U kahlo kahlo
 # ou directement :
 docker compose up --build
 
-# Démarrer en prod (arrière-plan, vérifie les secrets)
-./start.sh prod
+# Démarrer en prod (arrière-plan)
+docker compose up -d --build
 
 # Arrêter
 docker compose down
 
 # Voir les logs d'un service
 docker compose logs -f backend
+docker compose logs -f nginx
+docker compose logs -f db
 
 # Accéder à la base de données
 docker compose exec db psql -U kahlo -d kahlo
@@ -418,6 +439,69 @@ docker compose ps
 # Reset complet (supprime toutes les données)
 ./start.sh reset
 ```
+
+### Sauvegarde et restauration
+
+```bash
+# Sauvegarde
+docker compose exec db pg_dump -U kahlo kahlo > backup_$(date +%Y%m%d).sql
+
+# Restauration
+cat backup.sql | docker compose exec -T db psql -U kahlo kahlo
+```
+
+### Rotation des secrets
+
+1. Modifier les valeurs dans `.env`
+2. Redéployer : `docker compose up -d --build`
+3. Changement de `SECRET_KEY` invalide toutes les sessions actives
+
+> Les dumps applicatifs backend sont écrits dans le volume persistant `backups_data` monté sur `/backups/kahlo`.
+
+> `docker compose down -v` supprime **tous** les volumes nommés (`postgres_data`, `redis_data`, `uploads_data`, `factures_data`, `caldav_data`, `backups_data`).
+
+---
+
+## Dépannage
+
+| Problème | Solution |
+|---|---|
+| Le backend ne démarre pas | Vérifier les logs : `docker compose logs backend`. La DB est-elle prête ? |
+| Erreur 502 Bad Gateway | Le backend n'est pas encore prêt. Attendre 15-30s et réessayer |
+| Page blanche sur le frontend | Reconstruire : `docker compose up -d --build frontend` |
+| Erreurs CORS | Accéder via Nginx (http://localhost), pas directement au backend |
+| Données perdues au restart | Ne pas utiliser `docker compose down -v` (supprime les volumes) |
+| Login impossible | Vérifier les identifiants dans `.env`, utiliser `ADMIN_FORCE_RESET=true` |
+| CalDAV non accessible | Vérifier que le service caldav est healthy : `docker compose ps` |
+
+---
+
+## Sync Calendrier
+
+### Apple Calendar (CalDAV)
+
+iPhone/Mac → Réglages → Calendriers → Ajouter un compte → Autre → CalDAV :
+- **Serveur** : `https://erp.kahlocafe.fr/caldav/`
+- **Identifiant** : `kahlo` (ou valeur de `CALDAV_USER`)
+- **Mot de passe** : valeur de `CALDAV_PASSWORD` dans `.env`
+
+### Google Calendar
+
+Cliquer sur "Connecter Google Calendar" dans l'interface → OAuth automatique.
+Nécessite `GOOGLE_CLIENT_ID` et `GOOGLE_CLIENT_SECRET` dans `.env`.
+
+---
+
+## Mode offline (terrain)
+
+L'application fonctionne sans internet sur le stand de marché. Les opérations sont mises en queue Redis et synchronisées automatiquement à la reconnexion :
+
+1. Décrémentation stock
+2. Création commandes
+3. Mise à jour CRM
+4. Sync calendrier
+
+Un indicateur de sync est visible en haut de l'interface.
 
 ---
 
@@ -478,49 +562,6 @@ Kahlo-ERP/
 └── caldav/
     └── Dockerfile              # Fallback build local Radicale
 ```
-
----
-
-## Dépannage
-
-| Problème | Solution |
-|---|---|
-| Le backend ne démarre pas | Vérifier les logs : `docker compose logs backend`. La DB est-elle prête ? |
-| Erreur 502 Bad Gateway | Le backend n'est pas encore prêt. Attendre 15-30s et réessayer |
-| Page blanche sur le frontend | Reconstruire : `docker compose up -d --build frontend` |
-| Erreurs CORS | Accéder via Nginx (http://localhost), pas directement au backend |
-| Données perdues au restart | Ne pas utiliser `docker compose down -v` (supprime les volumes) |
-| Login impossible | Vérifier les identifiants dans `.env`, utiliser `ADMIN_FORCE_RESET=true` |
-| CalDAV non accessible | Vérifier que le service caldav est healthy : `docker compose ps` |
-
----
-
-## Sync Calendrier
-
-### Apple Calendar (CalDAV)
-
-iPhone/Mac → Réglages → Calendriers → Ajouter un compte → Autre → CalDAV :
-- **Serveur** : `https://erp.kahlocafe.fr/caldav/`
-- **Identifiant** : `kahlo` (ou valeur de `CALDAV_USER`)
-- **Mot de passe** : valeur de `CALDAV_PASSWORD` dans `.env`
-
-### Google Calendar
-
-Cliquer sur "Connecter Google Calendar" dans l'interface → OAuth automatique.
-Nécessite `GOOGLE_CLIENT_ID` et `GOOGLE_CLIENT_SECRET` dans `.env`.
-
----
-
-## Mode offline (terrain)
-
-L'application fonctionne sans internet sur le stand de marché. Les opérations sont mises en queue Redis et synchronisées automatiquement à la reconnexion :
-
-1. Décrémentation stock
-2. Création commandes
-3. Mise à jour CRM
-4. Sync calendrier
-
-Un indicateur de sync est visible en haut de l'interface.
 
 ---
 

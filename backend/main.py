@@ -11,13 +11,15 @@ import asyncio
 import os
 
 from database import engine, Base, AsyncSessionLocal
+from sqlalchemy import text
 from routers import (
     auth, stock, fournisseurs, clients, commandes,
     marches, calendrier, analytics, webhooks, ia, parametres,
-    utilisateurs
+    utilisateurs, system_update
 )
 from services.scheduler import start_scheduler
 import logging
+import redis.asyncio as aioredis
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +156,7 @@ app.include_router(webhooks.router,     prefix="/api/webhooks",     tags=["Webho
 app.include_router(ia.router,           prefix="/api/ia",           tags=["IA Gemini"])
 app.include_router(parametres.router,   prefix="/api/parametres",   tags=["Paramètres"])
 app.include_router(utilisateurs.router, prefix="/api/utilisateurs", tags=["Utilisateurs"])
+app.include_router(system_update.router, prefix="/api/system-update", tags=["Mise à jour"])
 
 
 # Global exception handler — empêche les stack traces en production
@@ -169,3 +172,37 @@ async def _global_exception_handler(request: Request, exc: Exception):
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/api/health/live")
+async def health_live():
+    return {"status": "alive"}
+
+
+@app.get("/api/health/ready")
+async def health_ready():
+    checks = {"database": False, "redis": False}
+
+    # DB check
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        checks["database"] = True
+    except Exception:
+        logger.exception("Readiness DB check failed")
+
+    # Redis check
+    redis_url = os.getenv("REDIS_URL", "redis://redis:6379")
+    r = aioredis.from_url(redis_url, decode_responses=True)
+    try:
+        pong = await r.ping()
+        checks["redis"] = bool(pong)
+    except Exception:
+        logger.exception("Readiness Redis check failed")
+    finally:
+        await r.aclose()
+
+    if all(checks.values()):
+        return {"status": "ready", "checks": checks}
+
+    return JSONResponse(status_code=503, content={"status": "degraded", "checks": checks})
