@@ -193,14 +193,17 @@ async def health_ready():
 
     # Redis check
     redis_url = os.getenv("REDIS_URL", "redis://redis:6379")
-    r = aioredis.from_url(redis_url, decode_responses=True)
     try:
-        pong = await r.ping()
-        checks["redis"] = bool(pong)
+        r = aioredis.from_url(redis_url, decode_responses=True)
+        try:
+            pong = await r.ping()
+            checks["redis"] = bool(pong)
+        except Exception:
+            logger.exception("Readiness Redis check failed")
+        finally:
+            await r.aclose()
     except Exception:
-        logger.exception("Readiness Redis check failed")
-    finally:
-        await r.aclose()
+        logger.exception("Failed to create Redis connection")
 
     if all(checks.values()):
         return {"status": "ready", "checks": checks}
