@@ -149,11 +149,11 @@ services:
       - ./nginx/radicale.conf:/etc/radicale/config:ro
       - ./nginx/radicale-init.sh:/etc/radicale/init.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:5232/.web/ || exit 1"]
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:5232/.web/ || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 3
-      start_period: 10s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -210,7 +210,7 @@ services:
       frontend:
         condition: service_healthy
       caldav:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
       interval: 10s
