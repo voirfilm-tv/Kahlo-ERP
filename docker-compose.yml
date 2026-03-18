@@ -115,11 +115,11 @@ services:
       - factures_data:/app/factures
       - backups_data:/backups/kahlo
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/ready"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 40s
     deploy:
       resources:
         limits:
