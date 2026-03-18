@@ -7,13 +7,12 @@
 
 FROM python:3.12-alpine
 
-RUN apk add --no-cache apache2-utils && \
+RUN apk add --no-cache apache2-utils su-exec && \
     pip install --no-cache-dir radicale==3.3.3 bcrypt passlib[bcrypt]
 
-RUN adduser -D radicale && mkdir -p /data && chown radicale:radicale /data
+RUN adduser -D radicale && mkdir -p /data/collections && chown -R radicale:radicale /data
 
 EXPOSE 5232
 
-USER radicale
-
+# Entrypoint (init.sh) handles user switching via su-exec
 CMD ["python", "-m", "radicale", "--config", "/etc/radicale/config"]
