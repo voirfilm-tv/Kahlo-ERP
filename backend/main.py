@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+import asyncio
 import os
 
 from database import engine, Base, AsyncSessionLocal
@@ -21,6 +22,50 @@ import logging
 import redis.asyncio as aioredis
 
 logger = logging.getLogger(__name__)
+
+_STARTUP_MAX_RETRIES = 10
+_STARTUP_RETRY_DELAY = 3  # secondes
+
+
+async def _wait_for_db():
+    """Attend que PostgreSQL soit prêt (retry avec backoff)."""
+    from sqlalchemy import text
+    for attempt in range(1, _STARTUP_MAX_RETRIES + 1):
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            logger.info("PostgreSQL prêt (tentative %d)", attempt)
+            return
+        except Exception as e:
+            if attempt == _STARTUP_MAX_RETRIES:
+                logger.error("PostgreSQL injoignable après %d tentatives", attempt)
+                raise
+            logger.warning("PostgreSQL non prêt (tentative %d/%d): %s", attempt, _STARTUP_MAX_RETRIES, e)
+            await asyncio.sleep(_STARTUP_RETRY_DELAY)
+
+
+async def _wait_for_redis():
+    """Attend que Redis soit prêt (retry avec backoff). Non bloquant si Redis absent."""
+    try:
+        import redis.asyncio as aioredis
+    except ImportError:
+        logger.info("redis non installé, skip vérification Redis")
+        return
+
+    redis_url = os.getenv("REDIS_URL", "redis://redis:6379")
+    for attempt in range(1, _STARTUP_MAX_RETRIES + 1):
+        try:
+            r = aioredis.from_url(redis_url, decode_responses=True)
+            await r.ping()
+            await r.aclose()
+            logger.info("Redis prêt (tentative %d)", attempt)
+            return
+        except Exception as e:
+            if attempt == _STARTUP_MAX_RETRIES:
+                logger.warning("Redis injoignable après %d tentatives — le backend démarre sans Redis", attempt)
+                return  # Non bloquant : l'app fonctionne sans Redis (mode dégradé)
+            logger.warning("Redis non prêt (tentative %d/%d): %s", attempt, _STARTUP_MAX_RETRIES, e)
+            await asyncio.sleep(_STARTUP_RETRY_DELAY)
 
 
 async def _run_migrations():
@@ -64,8 +109,10 @@ async def _seed_data():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup : persist secret → migrations → seed → scheduler
+    # Startup : persist secret → wait services → migrations → seed → scheduler
     auth.persist_secret_key_if_needed()
+    await _wait_for_db()
+    await _wait_for_redis()
     await _run_migrations()
     await _seed_data()
     start_scheduler()
@@ -93,7 +140,7 @@ app.add_middleware(
     allow_origins=[o.strip() for o in _cors_origins.split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
 )
 
 # Routers

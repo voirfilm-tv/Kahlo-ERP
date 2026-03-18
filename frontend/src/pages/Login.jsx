@@ -21,7 +21,7 @@ export default function Login() {
     setLoading(true);
     try {
       const data = await login(username, password);
-      loginStore(data.access_token, data.role, data.username);
+      loginStore(data.role, data.username);
       navigate("/");
     } catch (err) {
       setError(extractError(err, "Identifiants incorrects"));

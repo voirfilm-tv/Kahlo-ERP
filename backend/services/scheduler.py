@@ -83,17 +83,18 @@ async def check_stocks_critiques():
 
     logger.info("Vérification des stocks critiques...")
 
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(Lot).where(Lot.actif == True)
-        )
-        lots = result.scalars().all()
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Lot).where(Lot.actif == True)
+            )
+            lots = result.scalars().all()
 
-        for lot in lots:
-            if lot.est_critique:
-                logger.warning(f"⚠ Stock critique: {lot.origine} ({lot.stock_kg} kg)")
-                # TODO: créer événement rappel dans calendrier
-                # TODO: notifier via Brevo si marché dans < 7 jours
+            for lot in lots:
+                if lot.est_critique:
+                    logger.warning(f"⚠ Stock critique: {lot.origine} ({lot.stock_kg} kg)")
+    except Exception as e:
+        logger.error("Erreur check_stocks_critiques (DB indisponible ?): %s", e)
 
 
 async def check_anniversaires():
@@ -200,7 +201,10 @@ async def sync_caldav():
     from database import AsyncSessionLocal
     from services.calendrier import sync_caldav_vers_db
 
-    async with AsyncSessionLocal() as db:
-        nouveaux = await sync_caldav_vers_db(db)
-        if nouveaux:
-            logger.info(f"CalDAV sync: {len(nouveaux)} nouveaux événements importés")
+    try:
+        async with AsyncSessionLocal() as db:
+            nouveaux = await sync_caldav_vers_db(db)
+            if nouveaux:
+                logger.info(f"CalDAV sync: {len(nouveaux)} nouveaux événements importés")
+    except Exception as e:
+        logger.error("Erreur sync_caldav (service indisponible ?): %s", e)

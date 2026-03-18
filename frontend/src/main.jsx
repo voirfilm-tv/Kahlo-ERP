@@ -24,8 +24,8 @@ const queryClient = new QueryClient({
 });
 
 function PrivateRoute({ children }) {
-  const token = useAuthStore((s) => s.token);
-  return token ? children : <Navigate to="/login" replace />;
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  return isAuthenticated ? children : <Navigate to="/login" replace />;
 }
 
 createRoot(document.getElementById("root")).render(

@@ -1,7 +1,8 @@
 /**
  * KAHLO CAFÉ — Client API
  * Toutes les fonctions qui appellent le backend FastAPI.
- * Le token JWT est injecté automatiquement depuis le store Zustand.
+ * Le JWT est envoyé automatiquement via cookie HttpOnly (withCredentials).
+ * Le CSRF token est lu depuis le cookie kahlo_csrf et envoyé dans le header X-CSRF-Token.
  */
 
 import axios from "axios";
@@ -11,15 +12,21 @@ import { useAuthStore } from "../stores/auth";
 //  Instance Axios
 // ────────────────────────────────────────────────────────────
 
+function _getCookie(name) {
+  const match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
+  return match ? decodeURIComponent(match[2]) : null;
+}
+
 const api = axios.create({
   baseURL: "/api",
   headers: { "Content-Type": "application/json" },
+  withCredentials: true,  // Envoie les cookies HttpOnly à chaque requête
 });
 
-// Injecte le token JWT à chaque requête
+// Injecte le CSRF token à chaque requête mutative
 api.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().token;
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  const csrf = _getCookie("kahlo_csrf");
+  if (csrf) config.headers["X-CSRF-Token"] = csrf;
   return config;
 });
 

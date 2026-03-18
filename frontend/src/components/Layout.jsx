@@ -6,6 +6,7 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../stores/auth";
 import { useOfflineSync } from "../hooks/useOfflineSync";
+import api from "../services/api";
 
 const C = {
   espresso: "#261810", gold: "#C18A4A", prune: "#6B3F57",
@@ -25,7 +26,11 @@ const NAV = [
 export default function Layout({ children }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const logout = useAuthStore((s) => s.logout);
+  const storeLogout = useAuthStore((s) => s.logout);
+  const logout = async () => {
+    try { await api.post("/auth/logout"); } catch { /* ignore */ }
+    storeLogout();
+  };
   const { online, syncing, queueSize, triggerSync } = useOfflineSync();
 
   return (

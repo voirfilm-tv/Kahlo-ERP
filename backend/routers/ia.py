@@ -2,7 +2,6 @@
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import Optional
 from services.ia import (
     analyser_marche, suggerer_stock_marche,
     generer_fiche_produit, analyser_dashboard
