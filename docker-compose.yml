@@ -140,11 +140,8 @@ services:
     environment:
       CALDAV_USER: ${CALDAV_USER:-kahlo}
       CALDAV_PASSWORD: ${CALDAV_PASSWORD:-changeme}
-    entrypoint: ["/bin/sh", "/etc/radicale/init.sh"]
     volumes:
       - caldav_data:/data
-      - ./nginx/radicale.conf:/etc/radicale/config:ro
-      - ./nginx/radicale-init.sh:/etc/radicale/init.sh:ro
     expose:
       - "5232"
     healthcheck:
