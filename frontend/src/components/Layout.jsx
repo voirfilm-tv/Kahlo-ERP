@@ -14,18 +14,22 @@ const C = {
 };
 
 const NAV = [
-  { path: "/",            icon: "◈", label: "Dashboard" },
-  { path: "/commandes",   icon: "◫", label: "Commandes" },
-  { path: "/stock",       icon: "◉", label: "Stock" },
-  { path: "/clients",     icon: "◎", label: "Clients" },
-  { path: "/calendrier",  icon: "▦", label: "Calendrier" },
-  { path: "/analytics",   icon: "◬", label: "Analytics" },
-  { path: "/parametres",  icon: "⚙", label: "Paramètres" },
+  { path: "/",                icon: "◈", label: "Dashboard" },
+  { path: "/commandes",       icon: "◫", label: "Commandes" },
+  { path: "/stock",           icon: "◉", label: "Stock" },
+  { path: "/clients",         icon: "◎", label: "Clients" },
+  { path: "/investissements", icon: "◇", label: "Investissements" },
+  { path: "/calendrier",      icon: "▦", label: "Calendrier" },
+  { path: "/analytics",       icon: "◬", label: "Analytics" },
+  { path: "/parametres",      icon: "⚙", label: "Paramètres", adminOnly: true },
 ];
 
 export default function Layout({ children }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const role = useAuthStore((s) => s.role);
+  const username = useAuthStore((s) => s.username);
+  const nav = NAV.filter((item) => !item.adminOnly || role === "admin");
   const storeLogout = useAuthStore((s) => s.logout);
   const logout = async () => {
     try { await api.post("/auth/logout"); } catch { /* ignore */ }
@@ -58,7 +62,7 @@ export default function Layout({ children }) {
 
         {/* Nav */}
         <nav style={{ flex: 1 }}>
-          {NAV.map((item) => {
+          {nav.map((item) => {
             const active = pathname === item.path;
             return (
               <div
@@ -130,10 +134,10 @@ export default function Layout({ children }) {
                 display: "flex", alignItems: "center", justifyContent: "center",
                 fontSize: 12, fontWeight: 700,
                 boxShadow: "0 2px 8px rgba(107,63,87,0.4)",
-              }}>K</div>
+              }}>{(username || "K").charAt(0).toUpperCase()}</div>
               <div>
-                <div style={{ fontSize: 12, fontWeight: 600 }}>Kahlo Café</div>
-                <div style={{ fontSize: 10, color: C.rose }}>Lyon, FR</div>
+                <div style={{ fontSize: 12, fontWeight: 600 }}>{username || "Kahlo Café"}</div>
+                <div style={{ fontSize: 10, color: C.rose }}>{role === "admin" ? "Administrateur" : "Utilisateur"}</div>
               </div>
             </div>
             <button onClick={logout} style={{

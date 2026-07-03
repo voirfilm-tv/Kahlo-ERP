@@ -71,7 +71,9 @@ export default function Login() {
             className="login-input"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
             placeholder="Identifiant"
+            autoComplete="username"
             style={{
               background: "rgba(0,0,0,0.25)",
               backdropFilter: "blur(8px)",
@@ -88,6 +90,7 @@ export default function Login() {
             onChange={(e) => setPassword(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
             placeholder="Mot de passe"
+            autoComplete="current-password"
             style={{
               background: "rgba(0,0,0,0.25)",
               backdropFilter: "blur(8px)",

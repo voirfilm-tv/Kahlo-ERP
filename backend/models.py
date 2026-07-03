@@ -57,6 +57,13 @@ class Mouture(str, enum.Enum):
     italienne = "Cafetière italienne"
     chemex = "Chemex"
 
+class CategorieInvestissement(str, enum.Enum):
+    materiel = "materiel"          # imprimante, kakemono...
+    consommable = "consommable"    # étiquettes, stickers, sacs kraft...
+    marchandise = "marchandise"    # café, chocolat...
+    evenement = "evenement"        # emplacement marché, fête...
+    autre = "autre"
+
 
 # ============================================================
 #  UTILISATEURS
@@ -308,6 +315,105 @@ class Marche(Base):
             vendu = self.stock_emmene_kg - self.stock_ramene_kg
             return round((vendu / self.stock_emmene_kg) * 100)
         return None
+
+
+# ============================================================
+#  INVESTISSEMENTS
+#  Suivi des achats (matériel, consommables...) et de leur
+#  amortissement par unité de produit vendue.
+#  Modélisé d'après la calculatrice Excel « investissement ».
+# ============================================================
+
+class Investissement(Base):
+    __tablename__ = "investissements"
+    __table_args__ = (
+        Index("idx_investissements_actif", "actif"),
+    )
+
+    id            = Column(Integer, primary_key=True)
+    nom           = Column(String(200), nullable=False)          # ex: "imprimante", "rouleau étiquettes"
+    categorie     = Column(Enum(CategorieInvestissement), default=CategorieInvestissement.materiel, nullable=False)
+    valeur_totale = Column(Float, nullable=False)                # coût d'achat total (€)
+    quantite      = Column(Float, default=1.0, nullable=False)   # nb d'unités achetées (ex: 500 étiquettes)
+    amortissement_unites = Column(Float, default=1.0, nullable=False)  # nb de produits vendus pour amortir 1 unité
+    unites_vendues = Column(Float, default=0.0, nullable=False)  # produits vendus depuis l'achat
+    date_achat    = Column(DateTime)
+    notes         = Column(Text)
+    actif         = Column(Boolean, default=True)
+    created_at    = Column(DateTime, server_default=func.now())
+    updated_at    = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    @property
+    def cout_unitaire(self):
+        """Coût d'une unité achetée (valeur totale / quantité)."""
+        if not self.quantite:
+            return 0.0
+        return self.valeur_totale / self.quantite
+
+    @property
+    def cout_par_produit(self):
+        """Coût imputé à chaque produit vendu (colonne F de l'Excel)."""
+        if not self.amortissement_unites:
+            return 0.0
+        return self.cout_unitaire / self.amortissement_unites
+
+    @property
+    def somme_remboursee(self):
+        """Montant déjà amorti par les ventes (colonne H)."""
+        return (self.unites_vendues or 0) * self.cout_par_produit
+
+    @property
+    def restant(self):
+        """Reste à amortir (colonne I) — peut être négatif si sur-amorti."""
+        return self.valeur_totale - self.somme_remboursee
+
+    @property
+    def progression_pct(self):
+        if not self.valeur_totale:
+            return 100
+        return min(100, round((self.somme_remboursee / self.valeur_totale) * 100))
+
+
+class ScenarioPrix(Base):
+    """Scénario de la calculatrice de prix de vente.
+
+    Reproduit les feuilles « PDV / ecommerce » de l'Excel :
+    composants de coût + % de marge + taux d'impôts + taux SumUp
+    → prix de vente conseillé.
+    """
+    __tablename__ = "scenarios_prix"
+
+    id            = Column(Integer, primary_key=True)
+    nom           = Column(String(200), nullable=False)   # ex: "PDV expresso 250g"
+    composants    = Column(JSON, default=list)            # [{libelle, valeur}]
+    marge_pct     = Column(Float, default=30.0, nullable=False)
+    taux_impots   = Column(Float, default=12.5, nullable=False)
+    taux_sumup    = Column(Float, default=1.75, nullable=False)
+    unites_vendues = Column(Float, default=0.0, nullable=False)  # pour la vue rentabilité
+    notes         = Column(Text)
+    created_at    = Column(DateTime, server_default=func.now())
+    updated_at    = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    @property
+    def cout_total(self):
+        return sum((c.get("valeur") or 0) for c in (self.composants or []))
+
+    @property
+    def marge_valeur(self):
+        return self.cout_total * (self.marge_pct or 0) / 100
+
+    @property
+    def prix_vente(self):
+        """PV = (coûts + marge) / (1 - (impôts + sumup)/100) — formule Excel."""
+        taux = ((self.taux_impots or 0) + (self.taux_sumup or 0)) / 100
+        if taux >= 1:
+            return 0.0
+        return (self.cout_total + self.marge_valeur) / (1 - taux)
+
+    @property
+    def marge_totale(self):
+        """Marge cumulée sur les unités vendues (feuille « renta »)."""
+        return self.marge_valeur * (self.unites_vendues or 0)
 
 
 # ============================================================

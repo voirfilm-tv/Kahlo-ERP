@@ -29,9 +29,10 @@ _WINDOW_SECONDS = int(os.getenv("LOGIN_WINDOW_SECONDS", "300"))
 _MAX_TRACKED_KEYS = 10_000  # Empêcher le memory leak si attaque par usernames aléatoires
 
 
-def _check_rate_limit(key: str):
+def _check_rate_limit(key: str, max_attempts: int | None = None):
     """Lève HTTPException si trop de tentatives."""
     now = time.time()
+    limite = max_attempts or _MAX_ATTEMPTS
 
     # Nettoyage périodique : si trop de clés trackées, purger les anciennes
     if len(_login_attempts) > _MAX_TRACKED_KEYS:
@@ -43,7 +44,7 @@ def _check_rate_limit(key: str):
             del _login_attempts[k]
 
     _login_attempts[key] = [t for t in _login_attempts[key] if now - t < _WINDOW_SECONDS]
-    if len(_login_attempts[key]) >= _MAX_ATTEMPTS:
+    if len(_login_attempts[key]) >= limite:
         raise HTTPException(
             status_code=429,
             detail="Trop de tentatives de connexion. Réessayez dans quelques minutes."
@@ -242,9 +243,18 @@ def _record_failed_attempt(key: str):
     _login_attempts[key].append(time.time())
 
 
+def _client_ip(request: Request) -> str:
+    """IP réelle du client (X-Real-IP posé par nginx, sinon IP directe)."""
+    return request.headers.get("x-real-ip") or (request.client.host if request.client else "unknown")
+
+
 @router.post("/login")
-async def login(data: LoginData, response: Response, db: AsyncSession = Depends(get_db)):
-    _check_rate_limit(data.username)
+async def login(data: LoginData, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    # Double rate limiting : par username (protège un compte ciblé)
+    # et par IP (empêche le brute force en faisant tourner les usernames)
+    ip = _client_ip(request)
+    _check_rate_limit(f"user:{data.username}")
+    _check_rate_limit(f"ip:{ip}", max_attempts=_MAX_ATTEMPTS * 3)
 
     result = await db.execute(
         select(Utilisateur).where(
@@ -255,7 +265,8 @@ async def login(data: LoginData, response: Response, db: AsyncSession = Depends(
     user = result.scalars().first()
 
     if not user or not pwd_context.verify(data.password, user.password_hash):
-        _record_failed_attempt(data.username)
+        _record_failed_attempt(f"user:{data.username}")
+        _record_failed_attempt(f"ip:{ip}")
         # Message générique pour éviter l'énumération d'utilisateurs
         raise HTTPException(status_code=401, detail="Identifiants incorrects")
 
@@ -315,72 +326,68 @@ async def logout(response: Response):
 #  Lit le JWT depuis le cookie HttpOnly + vérifie le CSRF
 # ============================================================
 
-def _extract_token(request: Request) -> str:
-    """Extrait le JWT depuis le cookie HttpOnly ou le header Authorization (fallback)."""
-    # 1. Cookie HttpOnly (prioritaire, sécurisé)
-    token = request.cookies.get(_COOKIE_NAME)
-    if token:
-        return token
+def _extract_token(request: Request) -> tuple[str, str]:
+    """Extrait le JWT et sa provenance : ('cookie' | 'header').
 
-    # 2. Fallback header Authorization (pour les outils/tests/API externes)
+    Le header Authorization prime : c'est un choix délibéré du client
+    (outils/API/tests) et il est impossible à forger en attaque CSRF
+    (un header custom déclenche un preflight CORS). Un header invalide
+    donne un 401 — il ne retombe PAS sur le cookie, sinon un attaquant
+    pourrait esquiver la vérification CSRF de la session cookie.
+    """
     auth_header = request.headers.get("authorization", "")
     if auth_header.startswith("Bearer "):
-        return auth_header[7:]
+        return auth_header[7:], "header"
+
+    token = request.cookies.get(_COOKIE_NAME)
+    if token:
+        return token, "cookie"
 
     raise HTTPException(status_code=401, detail="Token manquant")
 
 
-def _verify_csrf(request: Request, payload: dict):
-    """Vérifie le CSRF token pour les requêtes mutatives depuis un navigateur."""
+def _verify_csrf(request: Request, payload: dict, token_source: str):
+    """Vérifie le CSRF token pour les requêtes mutatives cookie-based."""
     if request.method in ("GET", "HEAD", "OPTIONS"):
         return  # Pas de CSRF pour les requêtes idempotentes
 
-    # Si la requête vient d'un header Authorization (API/tests), pas de CSRF requis
-    if request.headers.get("authorization", "").startswith("Bearer "):
-        return
-
-    # Vérifier le CSRF token uniquement pour les requêtes cookie-based
-    if _COOKIE_NAME not in request.cookies:
+    # Le CSRF ne concerne que les tokens transportés par cookie :
+    # un header Authorization ne peut pas être forgé cross-site sans preflight CORS.
+    if token_source != "cookie":
         return
 
     csrf_from_header = request.headers.get(_CSRF_HEADER_NAME, "")
     csrf_from_jwt = payload.get("csrf", "")
-    if not csrf_from_header or not csrf_from_jwt or csrf_from_header != csrf_from_jwt:
+    if not csrf_from_header or not csrf_from_jwt or not _secrets.compare_digest(csrf_from_header, csrf_from_jwt):
         raise HTTPException(status_code=403, detail="CSRF token invalide")
 
 
-async def get_current_user(request: Request):
-    token = _extract_token(request)
+def _decode_payload(request: Request) -> dict:
+    """Décode le JWT (cookie ou header) et applique la vérification CSRF."""
+    token, source = _extract_token(request)
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        _verify_csrf(request, payload)
-        return payload["sub"]
     except JWTError:
         raise HTTPException(status_code=401, detail="Token invalide ou expiré")
+    _verify_csrf(request, payload, source)
+    return payload
+
+
+async def get_current_user(request: Request):
+    return _decode_payload(request)["sub"]
 
 
 async def get_current_user_payload(request: Request):
     """Retourne le payload complet du JWT (sub, user_id, role)."""
-    token = _extract_token(request)
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        _verify_csrf(request, payload)
-        return payload
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Token invalide ou expiré")
+    return _decode_payload(request)
 
 
 async def require_admin(request: Request):
     """Vérifie que l'utilisateur est admin."""
-    token = _extract_token(request)
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        _verify_csrf(request, payload)
-        if payload.get("role") != "admin":
-            raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs")
-        return payload
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Token invalide ou expiré")
+    payload = _decode_payload(request)
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs")
+    return payload
 
 
 # Alias utilisé par les routers qui ont besoin de vérifier le token

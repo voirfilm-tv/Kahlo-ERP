@@ -41,9 +41,15 @@ def _lire_env() -> dict:
     return dotenv_values(ENV_PATH)
 
 def _ecrire_cle(key: str, value: str):
-    """Écrit ou met à jour une variable dans le .env"""
+    """Écrit ou met à jour une variable dans le .env.
+
+    Met aussi à jour os.environ pour que les modules qui lisent la config
+    via os.getenv() (analytics, brevo, scheduler...) voient la nouvelle
+    valeur sans redémarrage du backend.
+    """
     ENV_PATH.touch(exist_ok=True)
     set_key(str(ENV_PATH), key, value)
+    os.environ[key] = value
 
 def _masquer(val: Optional[str]) -> str:
     """Retourne '••••••••' si la valeur est renseignée, chaîne vide sinon"""
@@ -156,9 +162,10 @@ class TousParametres(BaseModel):
 # ============================================================
 
 @router.get("/")
-async def get_parametres(token: str = Depends(verifier_token)):
+async def get_parametres(admin: dict = Depends(require_admin)):
     """
-    Retourne la configuration courante.
+    Retourne la configuration courante (admin uniquement — la configuration
+    expose le nom du compte admin et l'état des intégrations).
     Les clés secrètes sont masquées — on retourne juste si elles sont configurées ou non.
     """
     env = _lire_env()

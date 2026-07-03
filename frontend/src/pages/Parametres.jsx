@@ -1069,7 +1069,6 @@ export default function KahloParametres() {
     }
   };
   return (
-    <div style={{ minHeight: "100vh", background: C.dark, fontFamily: "'Outfit', sans-serif", color: C.creme, display: "flex" }}>
     <Layout>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=Raleway:wght@300;400;700;900&display=swap');
@@ -1086,27 +1085,8 @@ export default function KahloParametres() {
         a { text-decoration: none; }
         a:hover { text-decoration: underline; }
       `}</style>
-      {/* Sidebar principale ERP */}
-      <div style={{ width: 220, background: "rgba(38,24,16,0.65)", backdropFilter: "blur(24px) saturate(180%)", WebkitBackdropFilter: "blur(24px) saturate(180%)", borderRight: `1px solid rgba(193,138,74,0.12)`, boxShadow: "inset -1px 0 0 rgba(255,255,255,0.03), 4px 0 24px rgba(0,0,0,0.3)", display: "flex", flexDirection: "column", padding: "24px 12px", position: "fixed", height: "100vh", zIndex: 10 }}>
-        <div style={{ padding: "0 8px 28px", borderBottom: `1px solid rgba(193,138,74,0.1)`, marginBottom: 20 }}>
-          <div style={{ fontFamily: "'Raleway', sans-serif", fontWeight: 900, fontSize: 20, color: C.gold, letterSpacing: 1 }}>KAHLO</div>
-          <div style={{ fontFamily: "'Raleway', sans-serif", fontWeight: 300, fontSize: 11, color: C.rose, letterSpacing: 4, marginTop: 1 }}>CAFÉ · ERP</div>
-        </div>
-        <nav style={{ flex: 1 }}>
-          {[
-            { icon: "◈", label: "Dashboard" }, { icon: "◫", label: "Commandes" },
-            { icon: "◉", label: "Stock" }, { icon: "◎", label: "Clients" },
-            { icon: "▦", label: "Calendrier" }, { icon: "◬", label: "Analytics" },
-            { icon: "⚙", label: "Paramètres", active: true },
-          ].map(item => (
-            <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderRadius: 10, cursor: "pointer", fontSize: 13, fontWeight: 500, marginBottom: 2, color: item.active ? C.gold : "rgba(223,207,196,0.4)", background: item.active ? "rgba(193,138,74,0.12)" : "transparent" }}>
-              <span style={{ fontSize: 14 }}>{item.icon}</span>{item.label}
-            </div>
-          ))}
-        </nav>
-      </div>
-      {/* Sidebar paramètres */}
-      <div style={{ width: 210, background: "rgba(35,18,9,0.6)", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", borderRight: `1px solid rgba(193,138,74,0.08)`, boxShadow: "inset -1px 0 0 rgba(255,255,255,0.02), 2px 0 16px rgba(0,0,0,0.2)", position: "fixed", left: 220, height: "100vh", padding: "32px 14px", overflowY: "auto", zIndex: 9 }}>
+      {/* Sidebar paramètres (la sidebar principale est rendue par Layout) */}
+      <div style={{ width: 210, background: "rgba(35,18,9,0.6)", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", borderRight: `1px solid rgba(193,138,74,0.08)`, boxShadow: "inset -1px 0 0 rgba(255,255,255,0.02), 2px 0 16px rgba(0,0,0,0.2)", position: "fixed", left: 220, top: 0, height: "100vh", padding: "32px 14px", overflowY: "auto", zIndex: 9 }}>
         <div style={{ fontSize: 10, color: "rgba(223,207,196,0.25)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 16, padding: "0 6px" }}>Paramètres</div>
         {SECTIONS.map(s => (
           <div
@@ -1127,8 +1107,9 @@ export default function KahloParametres() {
           </div>
         ))}
       </div>
-      {/* Contenu */}
-      <div style={{ marginLeft: 430, flex: 1, padding: "40px 40px 100px", maxWidth: 720 }}>
+      {/* Contenu — le main de Layout est déjà décalé de 220px (sidebar principale),
+          il reste à compenser la sidebar paramètres (210px) */}
+      <div style={{ marginLeft: 210, padding: "40px 40px 100px", maxWidth: 720, fontFamily: "'Outfit', sans-serif", color: C.creme }}>
         {/* Header section */}
         <div style={{ marginBottom: 32 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1142,7 +1123,7 @@ export default function KahloParametres() {
             </div>
             {isLoading && <span style={{ fontSize: 12, color: "rgba(223,207,196,0.4)" }}>Chargement...</span>}
         {saveMsg && (
-              <span style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>{saveMsg}</span>
+              <span style={{ fontSize: 12, color: saveMsg.startsWith("✗") ? C.red : C.green, fontWeight: 600 }}>{saveMsg}</span>
             )}
           </div>
         </div>
@@ -1152,6 +1133,5 @@ export default function KahloParametres() {
       {/* Barre de sauvegarde flottante */}
       <SaveBar dirty={dirty} onSave={handleSave} onReset={handleReset} saving={saveMutation.isPending} />
     </Layout>
-    </div>
   );
 }

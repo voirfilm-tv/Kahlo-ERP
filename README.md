@@ -23,6 +23,7 @@ ERP interne Kahlo Café (FastAPI + PostgreSQL + Redis + React/Vite + Nginx + Doc
 - **Fournisseurs** — Contacts, scores, commandes d'achat
 - **CRM** — Clients, profils Kahlo, fidélité par tampons
 - **Commandes** — Suivi, statuts, paiement SumUp, factures PDF
+- **Investissements** — Suivi des achats, amortissement par produit vendu, calculatrice de prix de vente (marge, impôts, SumUp), rentabilité par produit
 - **Calendrier** — Marchés, événements, sync CalDAV + Google
 - **Analytics** — CA mensuel, top origines, tendances, saisonnalité
 
@@ -250,6 +251,7 @@ npm run build
 | `test_clients.py` | CRM, profils, fidélité |
 | `test_commandes.py` | Commandes, lignes, statuts |
 | `test_marches_calendrier_analytics.py` | Marchés, événements, KPIs |
+| `test_investissements.py` | Investissements, amortissement, calculatrice de prix, scénarios |
 
 ---
 

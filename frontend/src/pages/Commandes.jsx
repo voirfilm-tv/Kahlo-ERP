@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Layout from "../components/Layout";
-import { getCommandes, creerCommande, changerStatutCommande, notifierClientPrete, getClients, getLots, getMarches, creerCheckoutSumUp, extractError, telechargerFichier } from "../services/api";
+import { getCommandes, creerCommande, changerStatutCommande, notifierClientPrete, getClients, getLots, creerCheckoutSumUp, extractError, telechargerFichier } from "../services/api";
 
 const C = {
   espresso: "#261810", gold: "#C18A4A", prune: "#6B3F57",
@@ -37,9 +37,13 @@ export default function Commandes() {
     refetchInterval: 30_000,
   });
 
-  const { data: clients = [] } = useQuery({ queryKey: ["clients"], queryFn: getClients });
+  const { data: clients = [] } = useQuery({ queryKey: ["clients"], queryFn: () => getClients() });
   const { data: lots = [] }    = useQuery({ queryKey: ["lots"],    queryFn: () => getLots({ actif: true }) });
-  const { data: marches = [] } = useQuery({ queryKey: ["marches-a-venir"], queryFn: getMarches });
+
+  const nomClient = (id) => {
+    const c = clients.find(cl => cl.id === id);
+    return c ? `${c.prenom} ${c.nom}` : id ? `Client #${id}` : "—";
+  };
 
   const changerStatutMutation = useMutation({
     mutationFn: ({ id, statut }) => changerStatutCommande(id, statut),
@@ -65,7 +69,8 @@ export default function Commandes() {
   });
 
   const lotSelectionne = lots.find(l => l.id === parseInt(newCmd.lot_id));
-  const prix = lotSelectionne ? Math.round((lotSelectionne.prix_vente_kg / 1000) * newCmd.poids_g) : 0;
+  // Arrondi au centime (pas à l'euro) pour ne pas fausser le montant
+  const prix = lotSelectionne ? Math.round((lotSelectionne.prix_vente_kg / 1000) * newCmd.poids_g * 100) / 100 : 0;
 
   const filtered = commandes.filter(c =>
     `${c.numero}`.toLowerCase().includes(search.toLowerCase())
@@ -167,8 +172,7 @@ export default function Commandes() {
                     onClick={() => setSelected(selected?.id === c.id ? null : c)}>
                     <div style={{ fontFamily: "monospace", fontSize: 11, color: "rgba(223,207,196,0.4)" }}>{c.numero}</div>
                     <div style={{ fontSize: 12, fontWeight: 600 }}>
-                      {/* On affiche l'ID client car le backend ne retourne pas toujours le nom dans la liste */}
-                      Client #{c.client_id}
+                      {nomClient(c.client_id)}
                       <div style={{ fontSize: 10, color: "rgba(223,207,196,0.35)", marginTop: 1 }}>{new Date(c.date_commande).toLocaleDateString("fr-FR")}</div>
                     </div>
                     <div style={{ fontSize: 11, color: "rgba(223,207,196,0.5)" }}>{c.date_remise_prev ? new Date(c.date_remise_prev).toLocaleDateString("fr-FR") : "—"}</div>
@@ -212,6 +216,7 @@ export default function Commandes() {
 
           <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 0 }}>
             {[
+              { l: "Client", v: nomClient(selected.client_id) },
               { l: "Montant", v: `${selected.montant_total} €`, c: C.gold },
               { l: "Paiement", v: selected.paiement_mode === "sumup" ? "SumUp" : "Espèces" },
               { l: "Commande le", v: new Date(selected.date_commande).toLocaleDateString("fr-FR") },

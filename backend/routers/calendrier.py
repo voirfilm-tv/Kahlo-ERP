@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from database import get_db
 from models import Evenement, TypeEvenement
 from services.calendrier import (
@@ -33,9 +33,12 @@ class EvenementCreate(BaseModel):
 async def get_evenements(
     mois: Optional[int] = None,
     annee: Optional[int] = None,
+    debut: Optional[datetime] = None,
+    fin: Optional[datetime] = None,
     db: AsyncSession = Depends(get_db),
     token: str = Depends(verifier_token)
 ):
+    """Liste les événements. Filtrable par mois/annee OU par plage debut/fin."""
     query = select(Evenement).order_by(Evenement.date_debut)
     if mois and annee:
         from sqlalchemy import extract
@@ -43,6 +46,12 @@ async def get_evenements(
             extract("month", Evenement.date_debut) == mois,
             extract("year", Evenement.date_debut) == annee,
         )
+    else:
+        if debut:
+            query = query.where(Evenement.date_debut >= debut)
+        if fin:
+            # Inclure toute la journée de fin
+            query = query.where(Evenement.date_debut < fin + timedelta(days=1))
     result = await db.execute(query)
     return result.scalars().all()
 

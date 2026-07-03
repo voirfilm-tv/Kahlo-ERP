@@ -19,6 +19,7 @@ export default function Stock() {
   const [selected, setSelected] = useState(null);
   const [tab, setTab] = useState("lots");
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState(null); // id du lot en cours de modification
   const [search, setSearch] = useState("");
   const [newLot, setNewLot] = useState({ origine: "", fournisseur_id: "", stock_kg: "", seuil_alerte_kg: "3", prix_achat_kg: "", prix_vente_kg: "", notes_degustation: "" });
 
@@ -34,8 +35,12 @@ export default function Stock() {
   });
 
   const creerMutation = useMutation({
-    mutationFn: creerLot,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["lots"] }); setShowAdd(false); setNewLot({ origine: "", fournisseur_id: "", stock_kg: "", seuil_alerte_kg: "3", prix_achat_kg: "", prix_vente_kg: "", notes_degustation: "" }); },
+    mutationFn: (data) => editingId ? modifierLot(editingId, data) : creerLot(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["lots"] });
+      setShowAdd(false); setEditingId(null); setSelected(null);
+      setNewLot({ origine: "", fournisseur_id: "", stock_kg: "", seuil_alerte_kg: "3", prix_achat_kg: "", prix_vente_kg: "", notes_degustation: "" });
+    },
   });
 
   const ajusterMutation = useMutation({
@@ -217,6 +222,7 @@ export default function Stock() {
             </button>
             <button className="btn-g" style={{ width: "100%", padding: 11 }}
               onClick={() => {
+                setEditingId(selected.id);
                 setNewLot({
                   origine: selected.origine, fournisseur_id: String(selected.fournisseur_id || ""),
                   stock_kg: String(selected.stock_kg), seuil_alerte_kg: String(selected.seuil_alerte_kg),
@@ -229,13 +235,13 @@ export default function Stock() {
         </div>
       )}
 
-      {/* Modal nouveau lot */}
+      {/* Modal nouveau lot / édition */}
       {showAdd && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowAdd(false)}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => { setShowAdd(false); setEditingId(null); }}>
           <div style={{ background: C.espresso, border: "1px solid rgba(193,138,74,0.2)", borderRadius: 20, padding: 32, width: 480, maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 24 }}>
-              <h2 style={{ fontFamily: "'Raleway', sans-serif", fontWeight: 900, fontSize: 18 }}>Nouveau lot</h2>
-              <button onClick={() => setShowAdd(false)} style={{ background: "none", border: "none", color: "rgba(223,207,196,0.4)", cursor: "pointer", fontSize: 22 }}>×</button>
+              <h2 style={{ fontFamily: "'Raleway', sans-serif", fontWeight: 900, fontSize: 18 }}>{editingId ? "Modifier le lot" : "Nouveau lot"}</h2>
+              <button onClick={() => { setShowAdd(false); setEditingId(null); }} style={{ background: "none", border: "none", color: "rgba(223,207,196,0.4)", cursor: "pointer", fontSize: 22 }}>×</button>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               {[
@@ -267,18 +273,19 @@ export default function Stock() {
                   const prixA = parseFloat(newLot.prix_achat_kg);
                   const prixV = parseFloat(newLot.prix_vente_kg);
                   if (isNaN(stock) || isNaN(prixV)) return;
+                  const fournisseurId = parseInt(newLot.fournisseur_id);
                   creerMutation.mutate({
-                    ...newLot,
+                    origine: newLot.origine,
+                    notes_degustation: newLot.notes_degustation || null,
                     stock_kg: stock,
                     prix_achat_kg: isNaN(prixA) ? 0 : prixA,
                     prix_vente_kg: prixV,
                     seuil_alerte_kg: parseFloat(newLot.seuil_alerte_kg) || 3,
-                    fournisseur_id: parseInt(newLot.fournisseur_id) || undefined,
-                    numero_lot: `LOT-${Date.now()}`,
+                    fournisseur_id: isNaN(fournisseurId) ? null : fournisseurId,
                   });
                 }}
               >
-                {creerMutation.isPending ? "Création..." : "Créer le lot"}
+                {creerMutation.isPending ? "Enregistrement..." : editingId ? "Mettre à jour" : "Créer le lot"}
               </button>
               {creerMutation.isError && <div style={{ fontSize: 12, color: "#e8a0b8" }}>{extractError(creerMutation.error, "Erreur lors de la création")}</div>}
             </div>
