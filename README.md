@@ -271,6 +271,29 @@ Voir la documentation détaillée et la reproduction locale : `docs/ci.md`.
 
 ## Déploiement production
 
+### ZimaOS / CasaOS / NAS (auto-hébergé)
+
+L'installation manuelle « une image Docker » de ZimaOS ne convient pas : Kahlo ERP est une stack de 5 conteneurs construite depuis les sources. Passez par le terminal (SSH) :
+
+```bash
+# 1. Récupérer les sources (dans le stockage persistant de ZimaOS)
+cd /DATA/AppData
+curl -L https://github.com/voirfilm-tv/Kahlo-ERP/archive/refs/heads/main.tar.gz | tar xz
+mv Kahlo-ERP-main kahlo-erp && cd kahlo-erp
+
+# 2. Configurer les secrets
+cp .env.example .env
+nano .env   # changez POSTGRES_PASSWORD, REDIS_PASSWORD, SECRET_KEY,
+            # APP_DEFAULT_PASSWORD et CALDAV_PASSWORD
+
+# 3. Lancer la stack (publie l'ERP sur le port 8087 de la machine)
+docker compose -f docker-compose.yml -f docker-compose.selfhost.yml up -d --build
+```
+
+L'ERP est accessible sur `http://IP-du-NAS:8087` (port modifiable via `KAHLO_HTTP_PORT` dans le `.env`). Connexion initiale : `APP_USERNAME` / `APP_DEFAULT_PASSWORD` du `.env`.
+
+Pour un accès HTTPS avec votre domaine, créez un proxy host dans Nginx Proxy Manager vers `IP-du-NAS:8087` et ajoutez le domaine dans `CORS_ORIGINS`. Mise à jour : re-télécharger les sources puis relancer la commande du point 3.
+
 ### Derrière un reverse proxy existant
 
 Si vous avez déjà un reverse proxy (Nginx, Traefik, Caddy), vous pouvez retirer le service `nginx` du compose et exposer directement le backend et le frontend :
