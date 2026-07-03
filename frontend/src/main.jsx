@@ -5,14 +5,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAuthStore } from "./stores/auth";
 
 // Pages
-import Login      from "./pages/Login";
-import Dashboard  from "./pages/Dashboard";
-import Stock      from "./pages/Stock";
-import Clients    from "./pages/Clients";
-import Commandes  from "./pages/Commandes";
-import Calendrier from "./pages/Calendrier";
-import Analytics  from "./pages/Analytics";
-import Parametres from "./pages/Parametres";
+import Login           from "./pages/Login";
+import Dashboard       from "./pages/Dashboard";
+import Stock           from "./pages/Stock";
+import Clients         from "./pages/Clients";
+import Commandes       from "./pages/Commandes";
+import Calendrier      from "./pages/Calendrier";
+import Analytics       from "./pages/Analytics";
+import Parametres      from "./pages/Parametres";
+import Investissements from "./pages/Investissements";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -28,6 +29,13 @@ function PrivateRoute({ children }) {
   return isAuthenticated ? children : <Navigate to="/login" replace />;
 }
 
+function AdminRoute({ children }) {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const role = useAuthStore((s) => s.role);
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return role === "admin" ? children : <Navigate to="/" replace />;
+}
+
 createRoot(document.getElementById("root")).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
@@ -38,9 +46,10 @@ createRoot(document.getElementById("root")).render(
           <Route path="/stock" element={<PrivateRoute><Stock /></PrivateRoute>} />
           <Route path="/clients" element={<PrivateRoute><Clients /></PrivateRoute>} />
           <Route path="/commandes" element={<PrivateRoute><Commandes /></PrivateRoute>} />
+          <Route path="/investissements" element={<PrivateRoute><Investissements /></PrivateRoute>} />
           <Route path="/calendrier" element={<PrivateRoute><Calendrier /></PrivateRoute>} />
           <Route path="/analytics" element={<PrivateRoute><Analytics /></PrivateRoute>} />
-          <Route path="/parametres" element={<PrivateRoute><Parametres /></PrivateRoute>} />
+          <Route path="/parametres" element={<AdminRoute><Parametres /></AdminRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

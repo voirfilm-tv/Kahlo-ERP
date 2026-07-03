@@ -35,9 +35,16 @@ class Base(DeclarativeBase):
 
 
 async def get_db():
+    """Session par requête : commit automatique en fin de requête réussie.
+
+    Le commit final est indispensable : plusieurs routers (stock, etc.)
+    ne commitent pas explicitement et comptent sur ce commit implicite.
+    Sans lui, leurs mutations sont silencieusement annulées à la fermeture.
+    """
     async with AsyncSessionLocal() as session:
         try:
             yield session
+            await session.commit()
         except Exception:
             await session.rollback()
             raise

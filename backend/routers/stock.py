@@ -9,6 +9,7 @@ from sqlalchemy import select, update
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
+from uuid import uuid4
 
 from database import get_db
 from models import Lot, Fournisseur
@@ -23,9 +24,9 @@ router = APIRouter()
 # ============================================================
 
 class LotCreate(BaseModel):
-    fournisseur_id: int
+    fournisseur_id: Optional[int] = None
     origine: str
-    numero_lot: str
+    numero_lot: Optional[str] = None
     stock_kg: float
     seuil_alerte_kg: float = 3.0
     prix_achat_kg: float
@@ -35,9 +36,13 @@ class LotCreate(BaseModel):
     notes_degustation: Optional[str] = None
 
 class LotUpdate(BaseModel):
+    origine: Optional[str] = None
+    fournisseur_id: Optional[int] = None
     stock_kg: Optional[float] = None
     seuil_alerte_kg: Optional[float] = None
+    prix_achat_kg: Optional[float] = None
     prix_vente_kg: Optional[float] = None
+    dlc: Optional[datetime] = None
     notes_degustation: Optional[str] = None
     actif: Optional[bool] = None
 
@@ -123,7 +128,14 @@ async def get_lot(lot_id: int, db: AsyncSession = Depends(get_db), token: str = 
 
 @router.post("/")
 async def create_lot(data: LotCreate, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
-    lot = Lot(**data.model_dump())
+    valeurs = data.model_dump()
+    if not valeurs.get("numero_lot"):
+        valeurs["numero_lot"] = f"LOT-{datetime.now().strftime('%Y')}-{uuid4().hex[:6].upper()}"
+    if data.fournisseur_id is not None:
+        existe = await db.execute(select(Fournisseur).where(Fournisseur.id == data.fournisseur_id))
+        if not existe.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Fournisseur introuvable")
+    lot = Lot(**valeurs)
     db.add(lot)
     await db.flush()
     return {"id": lot.id, "message": "Lot créé", "numero_lot": lot.numero_lot}

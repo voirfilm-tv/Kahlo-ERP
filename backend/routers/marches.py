@@ -33,6 +33,15 @@ class BilanMarche(BaseModel):
     notes: Optional[str] = None
 
 
+class MarcheUpdate(BaseModel):
+    nom: Optional[str] = None
+    lieu: Optional[str] = None
+    date: Optional[datetime] = None
+    frais_prevus: Optional[float] = None
+    km_aller_retour: Optional[float] = None
+    notes: Optional[str] = None
+
+
 @router.get("/")
 async def get_marches(db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
     result = await db.execute(select(Marche).order_by(Marche.date.desc()))
@@ -66,6 +75,45 @@ async def creer_marche(data: MarcheCreate, db: AsyncSession = Depends(get_db), t
     if uid:
         marche.caldav_event_id = uid
 
+    await db.commit()
+    await db.refresh(marche)
+    return marche
+
+
+@router.get("/{mid}/bilan")
+async def get_bilan(mid: int, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
+    """Bilan d'un marché passé (utilisé par le panneau détail du calendrier)."""
+    result = await db.execute(select(Marche).where(Marche.id == mid))
+    marche = result.scalar_one_or_none()
+    if not marche:
+        raise HTTPException(404, "Marché introuvable")
+    if marche.ca_realise is None:
+        raise HTTPException(404, "Pas encore de bilan pour ce marché")
+
+    kg_vendus = None
+    if marche.stock_emmene_kg is not None and marche.stock_ramene_kg is not None:
+        kg_vendus = round(marche.stock_emmene_kg - marche.stock_ramene_kg, 2)
+
+    return {
+        "ca": marche.ca_realise,
+        "kg_vendus": kg_vendus,
+        "nb_commandes": marche.nb_clients or 0,
+        "taux_ecoulement": marche.taux_ecoulement,
+        "marge_nette": marche.marge_nette,
+        "frais_reels": marche.frais_reels,
+        "meteo": marche.meteo,
+        "notes": marche.notes,
+    }
+
+
+@router.patch("/{mid}")
+async def modifier_marche(mid: int, data: MarcheUpdate, db: AsyncSession = Depends(get_db), token: str = Depends(verifier_token)):
+    result = await db.execute(select(Marche).where(Marche.id == mid))
+    marche = result.scalar_one_or_none()
+    if not marche:
+        raise HTTPException(404, "Marché introuvable")
+    for field, value in data.model_dump(exclude_none=True).items():
+        setattr(marche, field, value)
     await db.commit()
     await db.refresh(marche)
     return marche

@@ -29,7 +29,7 @@ router = APIRouter()
 class ClientCreate(BaseModel):
     prenom: str
     nom: str
-    email: Optional[str] = None
+    email: Optional[EmailStr] = None
     telephone: Optional[str] = None
     ville: Optional[str] = None
     anniversaire: Optional[datetime] = None
@@ -41,7 +41,7 @@ class ClientCreate(BaseModel):
 class ClientUpdate(BaseModel):
     prenom: Optional[str] = None
     nom: Optional[str] = None
-    email: Optional[str] = None
+    email: Optional[EmailStr] = None
     telephone: Optional[str] = None
     ville: Optional[str] = None
     anniversaire: Optional[datetime] = None
@@ -229,6 +229,14 @@ async def modifier_client(
     client = result.scalar_one_or_none()
     if not client:
         raise HTTPException(status_code=404, detail="Client introuvable")
+
+    # Unicité email si modifié (sinon IntegrityError → 500)
+    if data.email and data.email != client.email:
+        existe = await db.execute(
+            select(Client).where(Client.email == data.email, Client.id != client_id)
+        )
+        if existe.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="Email déjà utilisé par un autre client")
 
     for key, value in data.model_dump(exclude_none=True).items():
         setattr(client, key, value)

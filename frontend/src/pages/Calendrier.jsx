@@ -8,11 +8,12 @@ const C = {
   rose: "#B07A8B", creme: "#DFCFC4", dark: "#1a0f0a", card: "#2e1a10",
 };
 
+// Types alignés sur l'enum backend TypeEvenement (marche, commande, fournisseur, rappel)
 const TYPES = {
   marche:      { label: "Marché",      color: "#C18A4A", bg: "rgba(193,138,74,0.15)" },
-  remise:      { label: "Remise",      color: "#4ade80", bg: "rgba(74,222,128,0.1)" },
+  commande:    { label: "Commande",    color: "#4ade80", bg: "rgba(74,222,128,0.1)" },
   fournisseur: { label: "Fournisseur", color: "#B07A8B", bg: "rgba(176,122,139,0.15)" },
-  perso:       { label: "Personnel",   color: "rgba(223,207,196,0.4)", bg: "rgba(223,207,196,0.06)" },
+  rappel:      { label: "Rappel",      color: "rgba(223,207,196,0.4)", bg: "rgba(223,207,196,0.06)" },
 };
 
 const JOURS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
@@ -52,9 +53,10 @@ export default function Calendrier() {
   });
 
   const { data: bilan, isLoading: loadingBilan } = useQuery({
-    queryKey: ["bilan-marche", selected?.id],
-    queryFn: () => getBilanMarche(selected.id),
-    enabled: !!selected?.id && selected?.type === "marche",
+    queryKey: ["bilan-marche", selected?.marche_id],
+    queryFn: () => getBilanMarche(selected.marche_id),
+    enabled: !!selected?.marche_id && selected?.type === "marche",
+    retry: false, // 404 = pas encore de bilan, inutile de réessayer
   });
 
   const creerMutation = useMutation({
@@ -77,7 +79,8 @@ export default function Calendrier() {
 
   const evtsByDate = {};
   evenements.forEach(e => {
-    const k = e.date.slice(0, 10);
+    if (!e.date_debut) return;
+    const k = e.date_debut.slice(0, 10);
     if (!evtsByDate[k]) evtsByDate[k] = [];
     evtsByDate[k].push(e);
   });
@@ -99,8 +102,8 @@ export default function Calendrier() {
   const prevMonth  = () => setCurrent(new Date(current.getFullYear(), current.getMonth() - 1, 1));
 
   const prochains = evenements
-    .filter(e => new Date(e.date) >= today)
-    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .filter(e => e.date_debut && new Date(e.date_debut) >= today)
+    .sort((a, b) => new Date(a.date_debut) - new Date(b.date_debut))
     .slice(0, 8);
 
   return (
@@ -215,8 +218,7 @@ export default function Calendrier() {
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>{e.titre}</div>
                         <div style={{ fontSize: 11, color: "rgba(223,207,196,0.4)" }}>
-                          {new Date(e.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
-                          {e.lieu && ` · ${e.lieu}`}
+                          {new Date(e.date_debut).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
                         </div>
                       </div>
                       <span style={{ background: t.bg, color: t.color, padding: "3px 10px", borderRadius: 20, fontSize: 10, fontWeight: 600 }}>{t.label}</span>
@@ -240,8 +242,12 @@ export default function Calendrier() {
 
           <div style={{ fontFamily: "'Raleway', sans-serif", fontWeight: 900, fontSize: 20, marginBottom: 4 }}>{selected.titre}</div>
           <div style={{ fontSize: 13, color: "rgba(223,207,196,0.5)", marginBottom: 20 }}>
-            {new Date(selected.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
-            {selected.lieu && <div style={{ marginTop: 4 }}>📍 {selected.lieu}</div>}
+            {new Date(selected.date_debut).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
+            {!selected.all_day && selected.date_debut && (
+              <span style={{ marginLeft: 6 }}>
+                · {new Date(selected.date_debut).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            )}
           </div>
 
           {selected.notes && (
@@ -330,7 +336,18 @@ export default function Calendrier() {
               <button
                 className="btn-p" style={{ padding: 13, opacity: creerMutation.isPending ? 0.7 : 1 }}
                 disabled={creerMutation.isPending || !newEvt.titre || !newEvt.date}
-                onClick={() => creerMutation.mutate(newEvt)}
+                onClick={() => {
+                  // Le backend attend date_debut/date_fin (datetime) — pas date/heure séparées
+                  const notes = [newEvt.lieu && `📍 ${newEvt.lieu}`, newEvt.notes].filter(Boolean).join("\n");
+                  creerMutation.mutate({
+                    type: newEvt.type,
+                    titre: newEvt.titre,
+                    date_debut: `${newEvt.date}T${newEvt.heure_debut || "08:00"}:00`,
+                    date_fin: `${newEvt.date}T${newEvt.heure_fin || "18:00"}:00`,
+                    all_day: false,
+                    notes: notes || null,
+                  });
+                }}
               >
                 {creerMutation.isPending ? "Création..." : "Créer l'événement"}
               </button>

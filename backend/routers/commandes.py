@@ -11,9 +11,12 @@ from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime, timezone
-import random
+import secrets
 import string
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 from database import get_db
 from models import Commande, LigneCommande, StatutCommande, Client, Lot
@@ -55,7 +58,8 @@ class ChangerStatut(BaseModel):
 
 def generer_numero() -> str:
     date_part = datetime.now().strftime("%y%m")
-    seq = ''.join(random.choices(string.digits + string.ascii_uppercase, k=6))
+    alphabet = string.digits + string.ascii_uppercase
+    seq = ''.join(secrets.choice(alphabet) for _ in range(6))
     return f"CMD-{date_part}-{seq}"
 
 def _serialise_commande(c: Commande, avec_lignes: bool = False) -> dict:
@@ -216,8 +220,9 @@ async def creer_commande(data: CommandeCreate, db: AsyncSession = Depends(get_db
             )
             commande.sumup_checkout_id = checkout["checkout_id"]
         except Exception:
-            # On crée la commande même si le checkout SumUp échoue
-            pass
+            # On crée la commande même si le checkout SumUp échoue,
+            # mais on trace l'échec pour ne pas le masquer
+            logger.exception("Échec de création du checkout SumUp pour la commande %s", commande.numero)
 
     await db.commit()
     await db.refresh(commande)

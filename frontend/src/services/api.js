@@ -3,6 +3,9 @@
  * Toutes les fonctions qui appellent le backend FastAPI.
  * Le JWT est envoyé automatiquement via cookie HttpOnly (withCredentials).
  * Le CSRF token est lu depuis le cookie kahlo_csrf et envoyé dans le header X-CSRF-Token.
+ *
+ * IMPORTANT : les chemins ci-dessous doivent rester alignés avec les routers
+ * FastAPI (backend/routers/*). Les tests backend font foi.
  */
 
 import axios from "axios";
@@ -89,7 +92,7 @@ export const getCaMensuel = (mois = 7) =>
   api.get("/analytics/ca-mensuel", { params: { mois } }).then((r) => r.data);
 
 export const getMarchesAVenir = () =>
-  api.get("/marches", { params: { a_venir: true, limit: 5 } }).then((r) => r.data);
+  api.get("/marches/a_venir").then((r) => r.data);
 
 export const getAnalyseIA = () =>
   api.post("/ia/analyser-dashboard").then((r) => r.data);
@@ -99,51 +102,48 @@ export const getAnalyseIA = () =>
 // ────────────────────────────────────────────────────────────
 
 export const getLots = (params = {}) =>
-  api.get("/stock/lots", { params }).then((r) => r.data);
+  api.get("/stock/", { params }).then((r) => r.data);
 
 export const getLot = (id) =>
-  api.get(`/stock/lots/${id}`).then((r) => r.data);
+  api.get(`/stock/${id}`).then((r) => r.data);
 
 export const creerLot = (data) =>
-  api.post("/stock/lots", data).then((r) => r.data);
+  api.post("/stock/", data).then((r) => r.data);
 
 export const modifierLot = (id, data) =>
-  api.patch(`/stock/lots/${id}`, data).then((r) => r.data);
+  api.patch(`/stock/${id}`, data).then((r) => r.data);
 
-export const ajusterStock = (id, delta, raison) =>
-  api.post(`/stock/lots/${id}/ajuster`, { delta, raison }).then((r) => r.data);
+export const ajusterStock = (lotId, deltaKg, motif) =>
+  api.post("/stock/ajustement", { lot_id: lotId, delta_kg: deltaKg, motif }).then((r) => r.data);
 
-export const getAlertesStock = () =>
-  api.get("/stock/alertes").then((r) => r.data);
+export const getStatsStock = () =>
+  api.get("/stock/stats").then((r) => r.data);
 
 // ────────────────────────────────────────────────────────────
 //  FOURNISSEURS
 // ────────────────────────────────────────────────────────────
 
 export const getFournisseurs = () =>
-  api.get("/fournisseurs").then((r) => r.data);
-
-export const getFournisseur = (id) =>
-  api.get(`/fournisseurs/${id}`).then((r) => r.data);
+  api.get("/fournisseurs/").then((r) => r.data);
 
 export const creerFournisseur = (data) =>
-  api.post("/fournisseurs", data).then((r) => r.data);
+  api.post("/fournisseurs/", data).then((r) => r.data);
 
 export const noterFournisseur = (id, score) =>
-  api.patch(`/fournisseurs/${id}/note`, { score }).then((r) => r.data);
+  api.patch(`/fournisseurs/${id}/score`, null, { params: { score } }).then((r) => r.data);
 
 // ────────────────────────────────────────────────────────────
 //  CLIENTS / CRM
 // ────────────────────────────────────────────────────────────
 
 export const getClients = (params = {}) =>
-  api.get("/clients", { params }).then((r) => r.data);
+  api.get("/clients/", { params }).then((r) => r.data);
 
 export const getClient = (id) =>
   api.get(`/clients/${id}`).then((r) => r.data);
 
 export const creerClient = (data) =>
-  api.post("/clients", data).then((r) => r.data);
+  api.post("/clients/", data).then((r) => r.data);
 
 export const modifierClient = (id, data) =>
   api.patch(`/clients/${id}`, data).then((r) => r.data);
@@ -162,13 +162,13 @@ export const getAlertesCRM = () =>
 // ────────────────────────────────────────────────────────────
 
 export const getCommandes = (params = {}) =>
-  api.get("/commandes", { params }).then((r) => r.data);
+  api.get("/commandes/", { params }).then((r) => r.data);
 
 export const getCommande = (id) =>
   api.get(`/commandes/${id}`).then((r) => r.data);
 
 export const creerCommande = (data) =>
-  api.post("/commandes", data).then((r) => r.data);
+  api.post("/commandes/", data).then((r) => r.data);
 
 export const changerStatutCommande = (id, statut, notes) =>
   api.patch(`/commandes/${id}/statut`, { statut, notes }).then((r) => r.data);
@@ -190,44 +190,41 @@ export const getStatsCommandes = () =>
 // ────────────────────────────────────────────────────────────
 
 export const getMarches = (params = {}) =>
-  api.get("/marches", { params }).then((r) => r.data);
-
-export const getMarche = (id) =>
-  api.get(`/marches/${id}`).then((r) => r.data);
+  api.get("/marches/", { params }).then((r) => r.data);
 
 export const creerMarche = (data) =>
-  api.post("/marches", data).then((r) => r.data);
+  api.post("/marches/", data).then((r) => r.data);
 
 export const modifierMarche = (id, data) =>
   api.patch(`/marches/${id}`, data).then((r) => r.data);
+
+export const changerStatutMarche = (id, statut) =>
+  api.patch(`/marches/${id}/statut`, null, { params: { statut } }).then((r) => r.data);
+
+export const saisirBilanMarche = (id, data) =>
+  api.post(`/marches/${id}/bilan`, data).then((r) => r.data);
 
 export const getBilanMarche = (id) =>
   api.get(`/marches/${id}/bilan`).then((r) => r.data);
 
 export const getAnalyseMarcheIA = (id) =>
-  api.post(`/ia/analyser-marche/${id}`).then((r) => r.data);
+  api.get(`/marches/${id}/analyse-ia`).then((r) => r.data);
 
 // ────────────────────────────────────────────────────────────
 //  CALENDRIER / ÉVÉNEMENTS
 // ────────────────────────────────────────────────────────────
 
 export const getEvenements = (params = {}) =>
-  api.get("/calendrier/evenements", { params }).then((r) => r.data);
-
-export const getEvenement = (id) =>
-  api.get(`/calendrier/evenements/${id}`).then((r) => r.data);
+  api.get("/calendrier/", { params }).then((r) => r.data);
 
 export const creerEvenement = (data) =>
-  api.post("/calendrier/evenements", data).then((r) => r.data);
-
-export const modifierEvenement = (id, data) =>
-  api.patch(`/calendrier/evenements/${id}`, data).then((r) => r.data);
+  api.post("/calendrier/", data).then((r) => r.data);
 
 export const supprimerEvenement = (id) =>
-  api.delete(`/calendrier/evenements/${id}`).then((r) => r.data);
+  api.delete(`/calendrier/${id}`).then((r) => r.data);
 
 export const syncCalendrier = () =>
-  api.post("/calendrier/sync").then((r) => r.data);
+  api.post("/calendrier/sync/caldav").then((r) => r.data);
 
 // ────────────────────────────────────────────────────────────
 //  ANALYTICS
@@ -246,24 +243,51 @@ export const getAnalyticsClients = () =>
   api.get("/analytics/clients").then((r) => r.data);
 
 // ────────────────────────────────────────────────────────────
-//  IA
+//  INVESTISSEMENTS & CALCULATRICE PRIX
 // ────────────────────────────────────────────────────────────
 
-export const getSuggestionStock = (marcheId) =>
-  api.post("/ia/suggerer-stock", { marche_id: marcheId }).then((r) => r.data);
+export const getInvestissements = (params = {}) =>
+  api.get("/investissements/", { params }).then((r) => r.data);
 
-export const getFicheProduit = (lotId) =>
-  api.post(`/ia/fiche-produit/${lotId}`).then((r) => r.data);
+export const getStatsInvestissements = () =>
+  api.get("/investissements/stats").then((r) => r.data);
+
+export const creerInvestissement = (data) =>
+  api.post("/investissements/", data).then((r) => r.data);
+
+export const modifierInvestissement = (id, data) =>
+  api.patch(`/investissements/${id}`, data).then((r) => r.data);
+
+export const supprimerInvestissement = (id) =>
+  api.delete(`/investissements/${id}`).then((r) => r.data);
+
+export const enregistrerVentesInvestissement = (id, quantite = 1) =>
+  api.post(`/investissements/${id}/vente`, { quantite }).then((r) => r.data);
+
+export const calculerPrixVente = (data) =>
+  api.post("/investissements/calculatrice", data).then((r) => r.data);
+
+export const getScenariosPrix = () =>
+  api.get("/investissements/scenarios").then((r) => r.data);
+
+export const creerScenarioPrix = (data) =>
+  api.post("/investissements/scenarios", data).then((r) => r.data);
+
+export const modifierScenarioPrix = (id, data) =>
+  api.patch(`/investissements/scenarios/${id}`, data).then((r) => r.data);
+
+export const supprimerScenarioPrix = (id) =>
+  api.delete(`/investissements/scenarios/${id}`).then((r) => r.data);
 
 // ────────────────────────────────────────────────────────────
 //  PARAMÈTRES
 // ────────────────────────────────────────────────────────────
 
 export const getParametres = () =>
-  api.get("/parametres").then((r) => r.data);
+  api.get("/parametres/").then((r) => r.data);
 
 export const sauvegarderParametres = (data) =>
-  api.post("/parametres", data).then((r) => r.data);
+  api.post("/parametres/", data).then((r) => r.data);
 
 export const testerConnexionSumUp = () =>
   api.post("/parametres/tester-sumup").then((r) => r.data);
@@ -289,10 +313,10 @@ export const changerMotDePasse = (ancien, nouveau, confirmer) =>
   }).then((r) => r.data);
 
 export const getUtilisateurs = () =>
-  api.get("/utilisateurs").then((r) => r.data);
+  api.get("/utilisateurs/").then((r) => r.data);
 
 export const creerUtilisateur = (data) =>
-  api.post("/utilisateurs", data).then((r) => r.data);
+  api.post("/utilisateurs/", data).then((r) => r.data);
 
 export const modifierUtilisateur = (id, data) =>
   api.patch(`/utilisateurs/${id}`, data).then((r) => r.data);
@@ -338,7 +362,7 @@ export const lancerMiseAJourSysteme = (targetVersion) =>
 // ────────────────────────────────────────────────────────────
 
 export const lancerSync = () =>
-  api.post("/sync").then((r) => r.data);
+  api.post("/sync/").then((r) => r.data);
 
 export const getSyncStatus = () =>
   api.get("/sync/status").then((r) => r.data);

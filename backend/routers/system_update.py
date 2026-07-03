@@ -103,6 +103,11 @@ class StartUpdateRequest(BaseModel):
     target_version: str | None = None
 
 
+# Format strict d'un tag de version : évite qu'une valeur arbitraire
+# (option git, ref malveillante) soit passée à `git checkout`.
+_VERSION_TAG_RE = re.compile(r"^v?[0-9][0-9A-Za-z._-]{0,63}$")
+
+
 def _parse_version(v: str) -> tuple:
     cleaned = (v or "").strip().lstrip("v")
     nums = re.findall(r"\d+", cleaned)
@@ -255,6 +260,8 @@ async def start_update(req: StartUpdateRequest, admin: dict = Depends(require_ad
         target = req.target_version or STATE.remote_version
         if not target:
             raise HTTPException(status_code=400, detail="Aucune version cible disponible. Lancez d'abord la vérification.")
+        if not _VERSION_TAG_RE.match(target):
+            raise HTTPException(status_code=400, detail="Format de version cible invalide.")
         if not _is_remote_newer(STATE.local_version, target):
             raise HTTPException(status_code=400, detail="Le logiciel est déjà à jour.")
 
