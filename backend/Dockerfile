@@ -8,7 +8,8 @@ WORKDIR /app
 RUN apk add --no-cache \
         postgresql16-client curl \
         font-liberation pango \
-        gcc musl-dev libffi-dev
+        gcc musl-dev libffi-dev \
+        su-exec
 
 # Dépendances Python
 COPY requirements.txt .
@@ -16,14 +17,19 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Créer les dossiers runtime AVANT de changer d'utilisateur
-RUN mkdir -p /app/uploads /app/factures /backups/kahlo
+# Dossiers runtime (config persistante, uploads, factures, backups)
+RUN mkdir -p /app/data /app/uploads /app/factures /backups/kahlo
 
-# Utilisateur non-root pour la sécurité
+# Utilisateur non-root pour la sécurité. L'entrypoint démarre en root
+# UNIQUEMENT pour corriger les permissions des volumes (Docker les crée
+# en root), puis exécute l'app via su-exec en tant qu'appuser.
 RUN adduser -D appuser && \
-    chown -R appuser:appuser /app/uploads /app/factures /backups/kahlo
-USER appuser
+    chown -R appuser:appuser /app/data /app/uploads /app/factures /backups/kahlo
+
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 8000
 
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

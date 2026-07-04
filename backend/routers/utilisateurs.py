@@ -378,7 +378,8 @@ async def verifier_domaine(
     dns_result = _verifier_dns(dom.domaine, dom.dns_valeur_attendue or "")
 
     dom.dns_valeur_actuelle = dns_result.get("valeur_trouvee")
-    dom.derniere_verif = datetime.now(timezone.utc)
+    # Naïf (UTC) : colonne sans timezone, asyncpg refuse les datetimes aware
+    dom.derniere_verif = datetime.now(timezone.utc).replace(tzinfo=None)
     dom.statut = StatutDomaine.verifie if dns_result["valide"] else StatutDomaine.erreur
 
     await db.commit()

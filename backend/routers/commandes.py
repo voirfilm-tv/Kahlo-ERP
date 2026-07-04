@@ -268,7 +268,9 @@ async def changer_statut(
 
     # → Remise : date réelle + facture PDF + tampon fidélité
     elif data.statut == StatutCommande.remise:
-        commande.date_remise_reelle = datetime.now(timezone.utc)
+        # Naïf (UTC) : les colonnes DateTime sont sans timezone — asyncpg
+        # refuse les datetimes aware (500 sur PostgreSQL, invisible en SQLite)
+        commande.date_remise_reelle = datetime.now(timezone.utc).replace(tzinfo=None)
 
         # Générer la facture PDF
         try:
