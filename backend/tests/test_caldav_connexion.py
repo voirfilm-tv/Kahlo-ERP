@@ -1,8 +1,9 @@
 """Tests — CalDAV zéro-config : connexion appareils, profil Apple, rotation"""
 
 import os
+import plistlib
 import pytest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from httpx import AsyncClient
 
 from services.caldav_admin import ecrire_htpasswd, regenerer_mot_de_passe
@@ -25,6 +26,25 @@ class TestConnexion:
             resp = await client.get("/api/calendrier/connexion", headers=auth_headers)
         assert resp.json()["url"] == "https://erp.kahlo.fr/caldav/kahlo/"
 
+    async def test_url_selfhost_conserve_le_port_du_host(self, client: AsyncClient, auth_headers):
+        headers = {**auth_headers, "host": "192.168.1.50:8087"}
+        with patch.dict(os.environ, {"PUBLIC_BASE_URL": "", "CALDAV_USER": "kahlo"}):
+            resp = await client.get("/api/calendrier/connexion", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["url"] == "http://192.168.1.50:8087/caldav/kahlo/"
+
+    async def test_url_reverse_proxy_https_utilise_headers_forwarded(self, client: AsyncClient, auth_headers):
+        headers = {
+            **auth_headers,
+            "host": "backend-interne",
+            "x-forwarded-proto": "https",
+            "x-forwarded-host": "erp.kahlo.fr",
+        }
+        with patch.dict(os.environ, {"PUBLIC_BASE_URL": "", "CALDAV_USER": "kahlo"}):
+            resp = await client.get("/api/calendrier/connexion", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["url"] == "https://erp.kahlo.fr/caldav/kahlo/"
+
     async def test_reserve_admin(self, client: AsyncClient):
         resp = await client.get("/api/calendrier/connexion")
         assert resp.status_code in (401, 403)
@@ -39,17 +59,49 @@ class TestProfilApple:
             assert r.status_code == 200
             url = r.json()["url"]
             assert "/api/calendrier/profil-apple?token=" in url
+            assert r.json()["download_url"].endswith("&download=1")
 
             token = url.split("token=")[1]
             # Le téléphone qui scanne n'a PAS de session : pas de header auth
             r2 = await client.get(f"/api/calendrier/profil-apple?token={token}")
         assert r2.status_code == 200
         assert r2.headers["content-type"].startswith("application/x-apple-aspen-config")
-        corps = r2.content.decode()
-        assert "com.apple.caldav.account" in corps
-        assert "kahlo" in corps
-        assert "secret-caldav" in corps
-        assert "erp.kahlo.fr" in corps
+        assert r2.headers["content-disposition"] == 'inline; filename="kahlo-calendrier.mobileconfig"'
+        profil = plistlib.loads(r2.content)
+        compte = profil["PayloadContent"][0]
+        assert compte["PayloadType"] == "com.apple.caldav.account"
+        assert compte["CalDAVHostName"] == "erp.kahlo.fr"
+        assert compte["CalDAVPort"] == 443
+        assert compte["CalDAVUseSSL"] is True
+        assert compte["CalDAVUsername"] == "kahlo"
+        assert compte["CalDAVPassword"] == "secret-caldav"
+        assert compte["CalDAVPrincipalURL"] == "/caldav/kahlo/"
+
+    async def test_profil_apple_http_local_affiche_page_aide_et_telechargement_direct(self, client: AsyncClient, auth_headers):
+        with patch.dict(os.environ, {"CALDAV_USER": "kahlo", "CALDAV_PASSWORD": "secret-caldav",
+                                     "PUBLIC_BASE_URL": "http://192.168.1.50:8087"}):
+            r = await client.post("/api/calendrier/connexion/lien-apple", headers=auth_headers)
+            token = r.json()["url"].split("token=")[1]
+
+            page = await client.get(
+                f"/api/calendrier/profil-apple?token={token}",
+                headers={"accept": "text/html"},
+            )
+            direct = await client.get(f"/api/calendrier/profil-apple?token={token}&download=1")
+
+        assert page.status_code == 200
+        assert page.headers["content-type"].startswith("text/html")
+        assert "l'installation automatique peut nécessiter HTTPS" in page.text
+        assert "Réglages → Apps → Calendrier" in page.text
+        assert "http://192.168.1.50:8087/caldav/kahlo/" in page.text
+
+        assert direct.status_code == 200
+        assert direct.headers["content-type"].startswith("application/x-apple-aspen-config")
+        assert direct.headers["content-disposition"] == 'inline; filename="kahlo-calendrier.mobileconfig"'
+        compte = plistlib.loads(direct.content)["PayloadContent"][0]
+        assert compte["CalDAVHostName"] == "192.168.1.50"
+        assert compte["CalDAVPort"] == 8087
+        assert compte["CalDAVUseSSL"] is False
 
     async def test_token_invalide_refuse(self, client: AsyncClient):
         resp = await client.get("/api/calendrier/profil-apple?token=nimporte-quoi")
@@ -67,6 +119,12 @@ class TestGestionMotDePasse:
             assert ecrire_htpasswd("kahlo", "monmotdepasse") is True
             contenu = (tmp_path / "users").read_text()
             assert contenu.startswith("kahlo:$2b$")
+
+    def test_mot_de_passe_affiche_correspond_au_htpasswd(self, tmp_path):
+        with patch.object(caldav_admin, "_HTPASSWD_PATH", tmp_path / "users"):
+            assert ecrire_htpasswd("kahlo", "motdepasse-erp") is True
+            assert caldav_admin.verifier_mot_de_passe_htpasswd("kahlo", "motdepasse-erp")["ok"] is True
+            assert caldav_admin.verifier_mot_de_passe_htpasswd("kahlo", "autre")["ok"] is False
 
     async def test_regeneration(self, client: AsyncClient, auth_headers, tmp_path, monkeypatch):
         monkeypatch.setenv("ENV_FILE_PATH", "/app/tests-inexistant/config.env")
@@ -119,3 +177,61 @@ class TestFrequenceSync:
                 "calendrier": {"caldav_interval": "0"},
             })
         assert resp.status_code == 400
+
+
+class TestDiagnosticCalDAV:
+    async def test_diagnostic_ok_avec_identifiants_affiches(self, client: AsyncClient, auth_headers, tmp_path):
+        fake_propfind = AsyncMock(return_value={
+            "ok": True,
+            "code": "ok",
+            "status_code": 207,
+            "message": "Authentification CalDAV OK",
+        })
+        with (
+            patch.object(caldav_admin, "_HTPASSWD_PATH", tmp_path / "users"),
+            patch.object(caldav_admin, "tester_auth_caldav", fake_propfind),
+            patch.dict(os.environ, {
+                "CALDAV_USER": "kahlo",
+                "CALDAV_PASSWORD": "motdepasse-erp",
+                "CALDAV_BASE_URL": "http://caldav:5232",
+                "PUBLIC_BASE_URL": "http://192.168.1.50:8087",
+            }),
+        ):
+            assert ecrire_htpasswd("kahlo", "motdepasse-erp") is True
+            resp = await client.post("/api/calendrier/connexion/verifier", headers=auth_headers)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["niveau"] == "attention"
+        assert data["url"] == "http://192.168.1.50:8087/caldav/kahlo/"
+        assert any(c["code"] == "htpasswd_password" and c["ok"] for c in data["checks"])
+        assert any(c["code"] == "radicale_interne" and c["ok"] for c in data["checks"])
+        assert any(c["code"] == "url_externe" and c["ok"] for c in data["checks"])
+        assert any(c["code"] == "apple_https" and c["niveau"] == "attention" for c in data["checks"])
+
+    async def test_diagnostic_signale_mauvais_mot_de_passe_htpasswd(self, client: AsyncClient, auth_headers, tmp_path):
+        fake_propfind = AsyncMock(return_value={
+            "ok": False,
+            "code": "mauvais_identifiants",
+            "status_code": 401,
+            "message": "Mauvais identifiants",
+        })
+        with (
+            patch.object(caldav_admin, "_HTPASSWD_PATH", tmp_path / "users"),
+            patch.object(caldav_admin, "tester_auth_caldav", fake_propfind),
+            patch.dict(os.environ, {
+                "CALDAV_USER": "kahlo",
+                "CALDAV_PASSWORD": "motdepasse-erp",
+                "PUBLIC_BASE_URL": "https://erp.kahlo.fr",
+            }),
+        ):
+            assert ecrire_htpasswd("kahlo", "autre-motdepasse") is True
+            resp = await client.post("/api/calendrier/connexion/verifier", headers=auth_headers)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is False
+        assert data["niveau"] == "erreur"
+        assert "ne correspond pas" in data["message"]
+        assert any(c["code"] == "htpasswd_password" and not c["ok"] for c in data["checks"])

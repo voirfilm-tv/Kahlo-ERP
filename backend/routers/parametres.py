@@ -347,8 +347,28 @@ async def sauvegarder_parametres(
 
     if data.calendrier:
         c = data.calendrier
-        w("CALDAV_USER", c.caldav_user)
-        w("CALDAV_PASSWORD", c.caldav_password)
+        caldav_modifie = False
+        if c.caldav_user is not None and not _est_vide_ou_masque(str(c.caldav_user)):
+            _ecrire_cle("CALDAV_USER", str(c.caldav_user))
+            caldav_modifie = True
+        if c.caldav_password is not None and not _est_vide_ou_masque(str(c.caldav_password)):
+            _ecrire_cle("CALDAV_PASSWORD", str(c.caldav_password))
+            caldav_modifie = True
+        if caldav_modifie:
+            from services import caldav_admin
+            user, password = caldav_admin.identifiants_caldav()
+            if not password or password == "changeme":
+                caldav_admin.assurer_identifiants()
+                user, password = caldav_admin.identifiants_caldav()
+            if not caldav_admin.ecrire_htpasswd(user, password):
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        "Impossible d'écrire le fichier d'authentification CalDAV. "
+                        "Vérifiez que le volume Docker caldav_data est monté côté backend "
+                        "sur /app/caldav-data et inscriptible."
+                    ),
+                )
         if c.caldav_interval is not None and str(c.caldav_interval).strip():
             try:
                 secondes = int(str(c.caldav_interval).strip())

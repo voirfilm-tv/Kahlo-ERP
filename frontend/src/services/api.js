@@ -236,6 +236,9 @@ export const regenererMotDePasseCalDAV = () =>
 export const genererLienAppleCalDAV = () =>
   api.post("/calendrier/connexion/lien-apple").then((r) => r.data);
 
+export const verifierConnexionCalDAV = () =>
+  api.post("/calendrier/connexion/verifier").then((r) => r.data);
+
 // ────────────────────────────────────────────────────────────
 //  ANALYTICS
 // ────────────────────────────────────────────────────────────

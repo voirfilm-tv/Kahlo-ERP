@@ -20,6 +20,7 @@ os.environ["APP_DEFAULT_PASSWORD"] = "testpassword123"
 os.environ["SESSION_HOURS"] = "1"
 # Isolation : ne jamais charger un config.env local (runtime_config)
 os.environ["ENV_FILE_PATH"] = "/app/tests-inexistant/config.env"
+os.environ["FACTURES_DIR"] = "/tmp/kahlo-test-factures"
 os.environ.pop("SUMUP_API_KEY", None)
 
 # ──────────────────────────────────────────────────

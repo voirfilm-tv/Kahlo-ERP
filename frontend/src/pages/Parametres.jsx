@@ -7,7 +7,7 @@ import {
   changerMotDePasse, getUtilisateurs, creerUtilisateur, modifierUtilisateur, supprimerUtilisateur,
   getDomaines, ajouterDomaine, verifierDomaine, modifierDomaine, supprimerDomaine,
   getSystemUpdateStatus, verifierMiseAJourSysteme, lancerMiseAJourSysteme,
-  getConnexionCalDAV, regenererMotDePasseCalDAV, genererLienAppleCalDAV,
+  getConnexionCalDAV, regenererMotDePasseCalDAV, genererLienAppleCalDAV, verifierConnexionCalDAV,
   extractError,
 } from "../services/api";
 import { QRCodeSVG } from "qrcode.react";
@@ -388,6 +388,7 @@ function SectionCalendrier({ cfg, set }) {
   const qc = useQueryClient();
   const [lienApple, setLienApple] = useState(null);
   const [msg, setMsg] = useState(null);
+  const [diagnostic, setDiagnostic] = useState(null);
 
   const { data: connexion, isLoading: loadingCx } = useQuery({
     queryKey: ["caldav-connexion"],
@@ -405,9 +406,22 @@ function SectionCalendrier({ cfg, set }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["caldav-connexion"] });
       setLienApple(null);
+      setDiagnostic(null);
       setMsg({ ok: true, text: "Nouveau mot de passe généré — reconfigurez vos appareils (nouveau QR code)" });
     },
     onError: (err) => setMsg({ ok: false, text: extractError(err, "Impossible de régénérer le mot de passe") }),
+  });
+
+  const verificationMutation = useMutation({
+    mutationFn: verifierConnexionCalDAV,
+    onSuccess: (d) => {
+      setDiagnostic(d);
+      setMsg({ ok: d.ok, text: d.message });
+    },
+    onError: (err) => {
+      setDiagnostic(null);
+      setMsg({ ok: false, text: extractError(err, "La vérification CalDAV a échoué") });
+    },
   });
 
   return (
@@ -432,7 +446,11 @@ function SectionCalendrier({ cfg, set }) {
             <ChampCopiable label="Adresse du serveur" value={connexion?.url} />
             <ChampCopiable label="Identifiant" value={connexion?.username} />
             <ChampCopiable label="Mot de passe (géré par l'ERP)" value={connexion?.password} masque />
-            <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 4 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 4 }}>
+              <button onClick={() => verificationMutation.mutate()} disabled={verificationMutation.isPending}
+                style={{ background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 10, padding: "8px 14px", color: C.green, cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "'Outfit', sans-serif" }}>
+                {verificationMutation.isPending ? "Test en cours..." : "Tester la connexion"}
+              </button>
               <button onClick={() => { if (window.confirm("Régénérer le mot de passe ? Les appareils déjà connectés devront être reconfigurés.")) regenMutation.mutate(); }}
                 disabled={regenMutation.isPending}
                 style={{ background: "rgba(232,160,184,0.08)", border: "1px solid rgba(232,160,184,0.2)", borderRadius: 10, padding: "8px 14px", color: C.red, cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "'Outfit', sans-serif" }}>
@@ -446,6 +464,20 @@ function SectionCalendrier({ cfg, set }) {
               <b>Android :</b> installez DAVx⁵ (gratuit, F-Droid/Play Store) → « Connexion avec URL et nom d'utilisateur » → collez les 3 champs ci-dessus.<br />
               <b>Configuration manuelle iPhone :</b> Réglages → Apps → Calendrier → Comptes → Autre → Compte CalDAV.
             </div>
+            {diagnostic?.checks?.length > 0 && (
+              <div style={{ marginTop: 12, display: "grid", gap: 7 }}>
+                {diagnostic.checks.map((check) => (
+                  <div key={check.code} style={{
+                    fontSize: 11, lineHeight: 1.5, padding: "7px 9px", borderRadius: 8,
+                    color: check.niveau === "erreur" ? C.red : check.niveau === "attention" ? C.gold : C.green,
+                    background: check.niveau === "erreur" ? "rgba(232,160,184,0.06)" : check.niveau === "attention" ? "rgba(193,138,74,0.07)" : "rgba(74,222,128,0.06)",
+                    border: `1px solid ${check.niveau === "erreur" ? "rgba(232,160,184,0.14)" : check.niveau === "attention" ? "rgba(193,138,74,0.16)" : "rgba(74,222,128,0.14)"}`,
+                  }}>
+                    {check.niveau === "erreur" ? "✗" : check.niveau === "attention" ? "!" : "✓"} {check.message}
+                  </div>
+                ))}
+              </div>
+            )}
           </>}
         </div>
 
@@ -458,10 +490,12 @@ function SectionCalendrier({ cfg, set }) {
                 <QRCodeSVG value={lienApple.url} size={168} />
               </div>
               <div style={{ fontSize: 11, color: "rgba(223,207,196,0.45)", marginTop: 10, lineHeight: 1.7 }}>
-                Scannez avec l'appareil photo → installez le profil :<br />le calendrier se configure tout seul.
+                {connexion?.https
+                  ? <>Scannez avec l'appareil photo → installez le profil :<br />le calendrier se configure tout seul.</>
+                  : <>Scannez avec l'appareil photo → ouvrez l'aide Apple :<br />profil téléchargeable et configuration manuelle.</>}
                 <br /><span style={{ color: "rgba(223,207,196,0.3)" }}>Lien valable {lienApple.expire_minutes} min.</span>
               </div>
-              <a href={lienApple.url} style={{ display: "inline-block", marginTop: 8, fontSize: 11, color: C.gold }}>ou télécharger le profil sur cet appareil</a>
+              <a href={lienApple.download_url || lienApple.url} style={{ display: "inline-block", marginTop: 8, fontSize: 11, color: C.gold }}>ou télécharger le profil sur cet appareil</a>
             </>
           ) : (
             <>
@@ -471,7 +505,9 @@ function SectionCalendrier({ cfg, set }) {
                 {lienMutation.isPending ? "Génération..." : "Afficher le QR code"}
               </button>
               <div style={{ fontSize: 11, color: "rgba(223,207,196,0.35)", marginTop: 10, lineHeight: 1.7 }}>
-                Un scan → le compte calendrier<br />s'installe automatiquement.
+                {connexion?.https
+                  ? <>Un scan → le compte calendrier<br />s'installe automatiquement.</>
+                  : <>En HTTP local, le QR ouvre<br />une page d'aide sans page blanche.</>}
               </div>
             </>
           )}
