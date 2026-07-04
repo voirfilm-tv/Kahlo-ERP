@@ -129,3 +129,30 @@ class TestAlertes:
         assert "anniversaires" in data
         assert "inactifs" in data
         assert "total_alertes" in data
+
+
+class TestEmailVide:
+    async def test_deux_clients_sans_email(self, client: AsyncClient, auth_headers):
+        """Le formulaire envoie email:"" — deux clients sans email doivent
+        pouvoir coexister (regression : IntegrityError 500 sur le 2e)."""
+        for prenom in ("Alice", "Bob"):
+            resp = await client.post("/api/clients/", headers=auth_headers, json={
+                "prenom": prenom, "nom": "Test", "email": "",
+                "telephone": "", "ville": "",
+            })
+            assert resp.status_code == 201, resp.text
+            assert resp.json()["email"] is None
+
+    async def test_email_invalide_rejete(self, client: AsyncClient, auth_headers):
+        resp = await client.post("/api/clients/", headers=auth_headers, json={
+            "prenom": "X", "nom": "Y", "email": "pas-un-email",
+        })
+        assert resp.status_code == 422
+
+    async def test_anniversaire_avec_timezone(self, client: AsyncClient, auth_headers):
+        """Un anniversaire ISO avec timezone (toISOString JS) ne doit pas
+        faire planter l'insertion (colonne sans timezone)."""
+        resp = await client.post("/api/clients/", headers=auth_headers, json={
+            "prenom": "Zoé", "nom": "Tz", "anniversaire": "1990-05-12T00:00:00.000Z",
+        })
+        assert resp.status_code == 201, resp.text

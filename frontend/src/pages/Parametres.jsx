@@ -267,6 +267,87 @@ function SectionSumup({ cfg, set }) {
     </div>
   );
 }
+function SectionBrevo({ cfg, set }) {
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const testConnection = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      await testerConnexionBrevo();
+      setTestResult("ok");
+    } catch {
+      setTestResult("error");
+    }
+    setTesting(false);
+  };
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <SectionTitle>Connexion Brevo</SectionTitle>
+        <StatusBadge ok={!!cfg.api_key} labelOk="Configuré" />
+      </div>
+      <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 12, padding: 16, marginBottom: 22, fontSize: 12, color: "rgba(223,207,196,0.5)", lineHeight: 1.8 }}>
+        Brevo envoie les emails automatiques : confirmation de commande, commande prête, anniversaires et relances clients inactifs. Les contacts sont synchronisés automatiquement depuis le CRM.
+        <br />
+        <a href="https://app.brevo.com/settings/keys/api" target="_blank" rel="noopener" style={{ color: C.gold }}>→ Créer une clé API sur app.brevo.com</a>
+      </div>
+      <Field label="Clé API Brevo" hint="app.brevo.com → Paramètres → Clés API (clé v3, commence par xkeysib-)">
+        <Input value={cfg.api_key} onChange={v => set("api_key", v)} placeholder="xkeysib-..." type="password" monospace />
+      </Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <Field label="Email expéditeur" hint="Doit être validé dans Brevo">
+          <Input value={cfg.from_email} onChange={v => set("from_email", v)} placeholder="bonjour@kahlocafe.fr" />
+        </Field>
+        <Field label="Nom expéditeur">
+          <Input value={cfg.from_name} onChange={v => set("from_name", v)} placeholder="Kahlo Café" />
+        </Field>
+      </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 24 }}>
+        <button onClick={testConnection} disabled={testing} style={{ background: `linear-gradient(135deg, ${C.prune}, ${C.gold})`, border: "none", borderRadius: 10, padding: "10px 20px", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Outfit', sans-serif", opacity: testing ? 0.6 : 1 }}>
+          {testing ? "Test en cours..." : "⚡ Tester la connexion"}
+        </button>
+        {testResult === "ok" && <span style={{ fontSize: 12, color: C.green }}>✓ Connexion Brevo OK</span>}
+        {testResult === "error" && <span style={{ fontSize: 12, color: C.red }}>✗ Clé invalide ou compte injoignable</span>}
+      </div>
+      <SectionTitle>Templates d'emails</SectionTitle>
+      <div style={{ fontSize: 11, color: "rgba(223,207,196,0.35)", marginBottom: 12 }}>
+        IDs des templates créés dans Brevo → Campagnes → Templates. Laissez vide pour désactiver un email.
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <Field label="Template anniversaire">
+          <Input value={cfg.tpl_anniversaire} onChange={v => set("tpl_anniversaire", v)} placeholder="1" monospace />
+        </Field>
+        <Field label="Template confirmation commande">
+          <Input value={cfg.tpl_confirmation} onChange={v => set("tpl_confirmation", v)} placeholder="2" monospace />
+        </Field>
+        <Field label="Template commande prête">
+          <Input value={cfg.tpl_prete} onChange={v => set("tpl_prete", v)} placeholder="3" monospace />
+        </Field>
+        <Field label="Template relance inactifs">
+          <Input value={cfg.tpl_relance} onChange={v => set("tpl_relance", v)} placeholder="4" monospace />
+        </Field>
+      </div>
+      <SectionTitle>Listes de contacts</SectionTitle>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
+        <Field label="Liste clients">
+          <Input value={cfg.liste_clients} onChange={v => set("liste_clients", v)} placeholder="3" monospace />
+        </Field>
+        <Field label="Liste VIP">
+          <Input value={cfg.liste_vip} onChange={v => set("liste_vip", v)} placeholder="5" monospace />
+        </Field>
+        <Field label="Liste relance">
+          <Input value={cfg.liste_relance} onChange={v => set("liste_relance", v)} placeholder="7" monospace />
+        </Field>
+      </div>
+      <SectionTitle>Envois automatiques</SectionTitle>
+      <Toggle value={cfg.envoi_confirmation} onChange={v => set("envoi_confirmation", v)} label="Confirmation de commande" sub="Email envoyé à la création d'une commande payée" />
+      <Toggle value={cfg.envoi_prete} onChange={v => set("envoi_prete", v)} label="Commande prête" sub="Email envoyé quand la commande passe en statut « prête »" />
+      <Toggle value={cfg.envoi_anniversaire} onChange={v => set("envoi_anniversaire", v)} label="Anniversaires" sub="Email automatique envoyé le matin de l'anniversaire du client" />
+      <Toggle value={cfg.envoi_relance} onChange={v => set("envoi_relance", v)} label="Relance clients inactifs" sub="Relance hebdomadaire des clients sans commande depuis 45 jours" />
+    </div>
+  );
+}
 function SectionCalendrier({ cfg, set }) {
   return (
     <div>

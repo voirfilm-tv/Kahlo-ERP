@@ -6,8 +6,9 @@ CRUD complet + tampons fidélité + alertes + sync Brevo
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional, List
 from datetime import datetime, timedelta
 import logging
@@ -26,7 +27,35 @@ router = APIRouter()
 #  SCHEMAS
 # ============================================================
 
-class ClientCreate(BaseModel):
+class _EmailVideEstNull:
+    """Le formulaire envoie "" quand l'email n'est pas renseigné : il faut le
+    convertir en NULL, sinon la validation EmailStr rejette la chaîne vide et
+    la contrainte d'unicité explose au 2e client sans email (500)."""
+
+    @field_validator("email", mode="before", check_fields=False)
+    @classmethod
+    def _email_vide(cls, v):
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
+    @field_validator("telephone", "ville", "notes", mode="before", check_fields=False)
+    @classmethod
+    def _texte_vide(cls, v):
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
+    @field_validator("anniversaire", mode="after", check_fields=False)
+    @classmethod
+    def _anniversaire_naif(cls, v):
+        # PostgreSQL (colonne sans timezone) refuse les datetimes aware
+        if v is not None and v.tzinfo is not None:
+            return v.replace(tzinfo=None)
+        return v
+
+
+class ClientCreate(_EmailVideEstNull, BaseModel):
     prenom: str
     nom: str
     email: Optional[EmailStr] = None
@@ -38,7 +67,7 @@ class ClientCreate(BaseModel):
     quantite_hab_g: int = 250
     notes: Optional[str] = None
 
-class ClientUpdate(BaseModel):
+class ClientUpdate(_EmailVideEstNull, BaseModel):
     prenom: Optional[str] = None
     nom: Optional[str] = None
     email: Optional[EmailStr] = None
@@ -205,7 +234,11 @@ async def creer_client(data: ClientCreate, db: AsyncSession = Depends(get_db), t
 
     client = Client(**data.model_dump())
     db.add(client)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Email déjà utilisé")
     await db.refresh(client)
 
     # Sync Brevo en arrière-plan (ne bloque pas si Brevo est down)
