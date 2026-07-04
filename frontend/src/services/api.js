@@ -302,14 +302,16 @@ export const getParametres = () =>
 export const sauvegarderParametres = (data) =>
   api.post("/parametres/", data).then((r) => r.data);
 
-export const testerConnexionSumUp = () =>
-  api.post("/parametres/tester-sumup").then((r) => r.data);
+// Les testeurs acceptent la clé saisie dans le formulaire (testée AVANT
+// enregistrement) ; sans argument, la clé déjà configurée est testée.
+export const testerConnexionSumUp = (apiKey) =>
+  api.post("/parametres/tester-sumup", apiKey ? { api_key: apiKey } : {}).then((r) => r.data);
 
-export const testerConnexionBrevo = () =>
-  api.post("/parametres/tester-brevo").then((r) => r.data);
+export const testerConnexionBrevo = (apiKey) =>
+  api.post("/parametres/tester-brevo", apiKey ? { api_key: apiKey } : {}).then((r) => r.data);
 
-export const testerConnexionGemini = () =>
-  api.post("/parametres/tester-gemini").then((r) => r.data);
+export const testerConnexionGemini = (apiKey, model) =>
+  api.post("/parametres/tester-gemini", { api_key: apiKey || null, model: model || null }).then((r) => r.data);
 
 export const sauvegarderMaintenant = () =>
   api.post("/parametres/sauvegarde").then((r) => r.data);

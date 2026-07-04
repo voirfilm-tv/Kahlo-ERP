@@ -87,6 +87,7 @@ class ParametresSumUp(BaseModel):
     merchant_email: Optional[str] = None
     webhook_secret: Optional[str] = None
     mode: Optional[str] = None
+    public_url: Optional[str] = None  # URL publique de l'ERP (callbacks paiement)
 
 class ParametresBrevo(BaseModel):
     api_key: Optional[str] = None
@@ -194,6 +195,7 @@ async def get_parametres(admin: dict = Depends(require_admin)):
             "merchant_email": env.get("SUMUP_MERCHANT_EMAIL", ""),
             "webhook_secret": _masquer(env.get("SUMUP_WEBHOOK_SECRET")),
             "mode":           env.get("SUMUP_MODE", "sandbox"),
+            "public_url":     env.get("PUBLIC_BASE_URL", ""),
             "configure":      bool(env.get("SUMUP_API_KEY")),
         },
         "brevo": {
@@ -305,6 +307,11 @@ async def sauvegarder_parametres(
         w("SUMUP_MERCHANT_EMAIL", s.merchant_email)
         w("SUMUP_WEBHOOK_SECRET", s.webhook_secret)
         w("SUMUP_MODE", s.mode)
+        if s.public_url is not None:
+            url = s.public_url.strip().rstrip("/")
+            if url and not url.startswith(("http://", "https://")):
+                raise HTTPException(status_code=400, detail="L'URL publique doit commencer par http:// ou https://")
+            _ecrire_cle("PUBLIC_BASE_URL", url)
 
     if data.brevo:
         b = data.brevo
@@ -405,27 +412,43 @@ async def sauvegarder_parametres(
 #  TESTS DE CONNEXION
 # ============================================================
 
+class TestConnexionRequest(BaseModel):
+    """Permet de tester la clé saisie dans le formulaire AVANT de l'enregistrer.
+    Si absente ou masquée (••••••••), on teste la clé déjà configurée."""
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+
+
+def _cle_a_tester(data: Optional[TestConnexionRequest], env_key: str) -> str:
+    if data and data.api_key and not _est_vide_ou_masque(data.api_key):
+        return data.api_key.strip()
+    return os.getenv(env_key, "")
+
+
 @router.post("/tester-sumup")
-async def tester_sumup(admin: dict = Depends(require_admin)):
+async def tester_sumup(data: Optional[TestConnexionRequest] = None, admin: dict = Depends(require_admin)):
     from services.sumup import verifier_connexion
-    ok = await verifier_connexion()
+    cle = _cle_a_tester(data, "SUMUP_API_KEY")
+    if not cle:
+        raise HTTPException(status_code=400, detail="Aucune clé SumUp à tester — saisissez votre clé API")
+    ok = await verifier_connexion(cle)
     if ok:
         return {"ok": True, "message": "Connexion SumUp opérationnelle"}
-    raise HTTPException(status_code=502, detail="Impossible de joindre l'API SumUp — vérifiez votre clé")
+    raise HTTPException(status_code=502, detail="Clé refusée par SumUp — vérifiez-la dans developer.sumup.com")
 
 
 @router.post("/tester-brevo")
-async def tester_brevo(admin: dict = Depends(require_admin)):
+async def tester_brevo(data: Optional[TestConnexionRequest] = None, admin: dict = Depends(require_admin)):
     import httpx
-    api_key = os.getenv("BREVO_API_KEY", "")
+    api_key = _cle_a_tester(data, "BREVO_API_KEY")
     if not api_key:
-        raise HTTPException(status_code=400, detail="Clé Brevo non configurée")
+        raise HTTPException(status_code=400, detail="Aucune clé Brevo à tester — saisissez votre clé API")
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 "https://api.brevo.com/v3/account",
                 headers={"api-key": api_key},
-                timeout=5
+                timeout=8
             )
             if resp.status_code == 200:
                 info = resp.json()
@@ -439,12 +462,12 @@ async def tester_brevo(admin: dict = Depends(require_admin)):
 
 
 @router.post("/tester-gemini")
-async def tester_gemini(admin: dict = Depends(require_admin)):
+async def tester_gemini(data: Optional[TestConnexionRequest] = None, admin: dict = Depends(require_admin)):
     import httpx
-    api_key = os.getenv("GEMINI_API_KEY", "")
-    model   = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    api_key = _cle_a_tester(data, "GEMINI_API_KEY")
+    model = (data.model if data and data.model else None) or os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
     if not api_key:
-        raise HTTPException(status_code=400, detail="Clé Gemini non configurée")
+        raise HTTPException(status_code=400, detail="Aucune clé Gemini à tester — saisissez votre clé API")
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.post(
