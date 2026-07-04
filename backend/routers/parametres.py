@@ -230,7 +230,10 @@ async def get_parametres(admin: dict = Depends(require_admin)):
         "calendrier": {
             "caldav_user":         env.get("CALDAV_USER", "kahlo"),
             "caldav_password":     _masquer(env.get("CALDAV_PASSWORD")),
-            "caldav_interval":     env.get("CALDAV_INTERVAL", "30"),
+            # Fréquence en secondes (CALDAV_INTERVAL_SECONDS) ;
+            # rétro-compat avec l'ancien CALDAV_INTERVAL en minutes
+            "caldav_interval":     env.get("CALDAV_INTERVAL_SECONDS")
+                                   or str(int(env.get("CALDAV_INTERVAL", "5") or 5) * 60),
             "google_client_id":    env.get("GOOGLE_CLIENT_ID", ""),
             "google_client_secret": _masquer(env.get("GOOGLE_CLIENT_SECRET")),
             "sync_marches":     env.get("SYNC_MARCHES", "true") == "true",
@@ -346,7 +349,14 @@ async def sauvegarder_parametres(
         c = data.calendrier
         w("CALDAV_USER", c.caldav_user)
         w("CALDAV_PASSWORD", c.caldav_password)
-        w("CALDAV_INTERVAL", c.caldav_interval)
+        if c.caldav_interval is not None and str(c.caldav_interval).strip():
+            try:
+                secondes = int(str(c.caldav_interval).strip())
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Fréquence de sync calendrier invalide")
+            if not 1 <= secondes <= 86400:
+                raise HTTPException(status_code=400, detail="Fréquence de sync : entre 1 seconde et 24 h")
+            _ecrire_cle("CALDAV_INTERVAL_SECONDS", str(secondes))
         w("GOOGLE_CLIENT_ID", c.google_client_id)
         w("GOOGLE_CLIENT_SECRET", c.google_client_secret)
         wb("SYNC_MARCHES", c.sync_marches)

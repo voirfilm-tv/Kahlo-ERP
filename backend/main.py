@@ -121,6 +121,12 @@ async def _seed_data():
 async def lifespan(app: FastAPI):
     # Startup : persist secret → wait services → migrations → seed → scheduler
     auth.persist_secret_key_if_needed()
+    # CalDAV géré par l'ERP : mot de passe auto-généré + htpasswd Radicale aligné
+    try:
+        from services.caldav_admin import assurer_identifiants
+        assurer_identifiants()
+    except Exception:
+        logger.exception("Impossible d'initialiser les identifiants CalDAV")
     await _wait_for_db()
     await _wait_for_redis()
     await _run_migrations()

@@ -24,7 +24,7 @@ ERP interne Kahlo Café (FastAPI + PostgreSQL + Redis + React/Vite + Nginx + Doc
 - **CRM** — Clients, profils Kahlo, fidélité par tampons
 - **Commandes** — Suivi, statuts, paiement SumUp, factures PDF
 - **Investissements** — Suivi des achats, amortissement par produit vendu, calculatrice de prix de vente (marge, impôts, SumUp), rentabilité par produit
-- **Calendrier** — Marchés, événements, sync CalDAV + Google
+- **Calendrier** — Marchés, événements, sync CalDAV + Google. Serveur CalDAV intégré zéro-config : mot de passe auto-généré par l'ERP, connexion des appareils par QR code (profil Apple automatique) ou copie des identifiants, fréquence de sync réglable de 1 s à 30 min
 - **Analytics** — CA mensuel, top origines, tendances, saisonnalité
 
 ## Intégrations

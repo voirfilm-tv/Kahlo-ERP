@@ -7,7 +7,7 @@ import caldav
 import vobject
 import os
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, time as dt_time
 from functools import partial
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
@@ -15,9 +15,15 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-CALDAV_URL = os.getenv("CALDAV_BASE_URL", "http://caldav:5232")
-CALDAV_USER = os.getenv("CALDAV_USER", "kahlo")
-CALDAV_PASSWORD = os.getenv("CALDAV_PASSWORD", "changeme")
+
+def _caldav_config() -> tuple[str, str, str]:
+    """URL/identifiants lus à chaque appel : suivent la config à chaud
+    (mot de passe auto-généré ou régénéré via caldav_admin)."""
+    return (
+        os.getenv("CALDAV_BASE_URL", "http://caldav:5232"),
+        os.getenv("CALDAV_USER", "kahlo"),
+        os.getenv("CALDAV_PASSWORD", "changeme"),
+    )
 
 
 async def _run_sync(func, *args, **kwargs):
@@ -31,11 +37,63 @@ async def _run_sync(func, *args, **kwargs):
 # ============================================================
 
 def get_caldav_client():
+    url, user, password = _caldav_config()
     return caldav.DAVClient(
-        url=f"{CALDAV_URL}/{CALDAV_USER}/",
-        username=CALDAV_USER,
-        password=CALDAV_PASSWORD
+        url=f"{url}/{user}/",
+        username=user,
+        password=password,
     )
+
+
+# ── Détection de changement ultra-légère (ctag) ────────────
+# Permet une fréquence de sync très courte (jusqu'à 1 s) sans coût :
+# une seule petite requête PROPFIND locale ; la vraie synchronisation
+# ne se déclenche que si l'empreinte des calendriers a changé.
+
+_PROPFIND_CTAG = (
+    '<?xml version="1.0" encoding="utf-8"?>'
+    '<propfind xmlns="DAV:" xmlns:CS="http://calendarserver.org/ns/">'
+    "<prop><CS:getctag/></prop></propfind>"
+)
+
+
+def _empreinte_caldav_sync() -> str | None:
+    """Empreinte (concat des ctags) des collections de l'utilisateur.
+    None si Radicale est injoignable."""
+    import httpx
+    import re
+    url, user, password = _caldav_config()
+    try:
+        resp = httpx.request(
+            "PROPFIND",
+            f"{url}/{user}/",
+            content=_PROPFIND_CTAG,
+            headers={"Depth": "1", "Content-Type": "application/xml"},
+            auth=(user, password),
+            timeout=3,
+        )
+        if resp.status_code >= 400:
+            return None
+        ctags = re.findall(r"getctag[^>]*>([^<]+)<", resp.text)
+        return "|".join(sorted(ctags)) or "vide"
+    except Exception:
+        return None
+
+
+_derniere_empreinte: str | None = None
+
+
+async def caldav_a_change() -> bool | None:
+    """True si les calendriers ont changé depuis le dernier appel,
+    False sinon, None si Radicale est injoignable."""
+    global _derniere_empreinte
+    empreinte = await _run_sync(_empreinte_caldav_sync)
+    if empreinte is None:
+        return None
+    if empreinte == _derniere_empreinte:
+        return False
+    _derniere_empreinte = empreinte
+    return True
 
 
 def _creer_evenement_caldav_sync(evenement: dict) -> str:
@@ -79,34 +137,76 @@ async def creer_evenement_caldav(evenement: dict) -> str:
         return None
 
 
+def _dt_naif(valeur) -> datetime | None:
+    """Convertit un dtstart/dtend iCal (date ou datetime aware) en datetime
+    naïf UTC — les colonnes PostgreSQL sont sans timezone."""
+    if valeur is None:
+        return None
+    if isinstance(valeur, datetime):
+        if valeur.tzinfo is not None:
+            return valeur.astimezone(timezone.utc).replace(tzinfo=None)
+        return valeur
+    if isinstance(valeur, date):
+        return datetime.combine(valeur, dt_time.min)
+    return None
+
+
 def _sync_caldav_sync() -> list:
     """Récupère les événements CalDAV — synchrone."""
     client = get_caldav_client()
     principal = client.principal()
     calendars = principal.calendars()
 
-    nouveaux = []
+    resultats = []
     for cal in calendars:
-        events = cal.events()
-        for event in events:
+        for event in cal.events():
             vevent = event.vobject_instance.vevent
-            uid = str(vevent.uid.value)
-            titre = str(vevent.summary.value)
-            nouveaux.append({
-                "uid": uid,
-                "titre": titre,
-                "date": vevent.dtstart.value,
+            resultats.append({
+                "uid": str(vevent.uid.value),
+                "titre": str(getattr(vevent, "summary", None) and vevent.summary.value or "Sans titre"),
+                "date_debut": _dt_naif(vevent.dtstart.value),
+                "date_fin": _dt_naif(getattr(vevent, "dtend", None) and vevent.dtend.value),
+                "notes": str(getattr(vevent, "description", None) and vevent.description.value or "") or None,
             })
-    return nouveaux
+    return resultats
 
 
 async def sync_caldav_vers_db(db) -> list:
-    """Sync bidirectionnelle : récupère les événements Apple Calendar"""
+    """Sync entrante : importe dans l'ERP les événements créés sur les
+    appareils (iPhone/Mac...) qui n'existent pas encore en base."""
+    from sqlalchemy import select
+    from models import Evenement, TypeEvenement
+
     try:
-        return await _run_sync(_sync_caldav_sync)
+        distants = await _run_sync(_sync_caldav_sync)
     except Exception as e:
         logger.error(f"Erreur sync CalDAV: {e}")
         return []
+
+    if not distants:
+        return []
+
+    result = await db.execute(select(Evenement.caldav_uid).where(Evenement.caldav_uid != None))
+    uids_connus = {row[0] for row in result.all()}
+
+    nouveaux = []
+    for ev in distants:
+        if ev["uid"] in uids_connus or not ev["date_debut"]:
+            continue
+        db.add(Evenement(
+            type=TypeEvenement.rappel,
+            titre=ev["titre"],
+            date_debut=ev["date_debut"],
+            date_fin=ev["date_fin"],
+            notes=ev["notes"],
+            caldav_uid=ev["uid"],
+        ))
+        nouveaux.append({"uid": ev["uid"], "titre": ev["titre"]})
+
+    if nouveaux:
+        await db.commit()
+        logger.info("CalDAV → ERP : %d événement(s) importé(s)", len(nouveaux))
+    return nouveaux
 
 
 def _supprimer_caldav_sync(uid: str) -> bool:

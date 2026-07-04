@@ -226,6 +226,16 @@ export const supprimerEvenement = (id) =>
 export const syncCalendrier = () =>
   api.post("/calendrier/sync/caldav").then((r) => r.data);
 
+// CalDAV zéro-config : l'ERP gère le serveur et les identifiants
+export const getConnexionCalDAV = () =>
+  api.get("/calendrier/connexion").then((r) => r.data);
+
+export const regenererMotDePasseCalDAV = () =>
+  api.post("/calendrier/connexion/regenerer").then((r) => r.data);
+
+export const genererLienAppleCalDAV = () =>
+  api.post("/calendrier/connexion/lien-apple").then((r) => r.data);
+
 // ────────────────────────────────────────────────────────────
 //  ANALYTICS
 // ────────────────────────────────────────────────────────────
