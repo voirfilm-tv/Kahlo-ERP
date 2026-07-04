@@ -131,6 +131,13 @@ async def _process_operation(op: dict, db):
         logger.warning(f"Type d'opération inconnu: {op_type}")
 
 
+def _dt_naif(iso: str) -> datetime:
+    """Datetime naïf (UTC) : les colonnes DateTime sont sans timezone,
+    asyncpg refuse les datetimes aware sur PostgreSQL."""
+    dt = datetime.fromisoformat(iso)
+    return dt.astimezone(timezone.utc).replace(tzinfo=None) if dt.tzinfo else dt
+
+
 async def _sync_vente(op: dict, db):
     """Sync une vente terrain : décrémente stock + crée commande"""
     from services.stock import decrementer_stock
@@ -142,8 +149,8 @@ async def _sync_vente(op: dict, db):
         statut=StatutCommande.remise,
         montant_total=op["montant"],
         paiement_mode=op.get("paiement", "especes"),
-        date_commande=datetime.fromisoformat(op["_queued_at"]),
-        date_remise_reelle=datetime.fromisoformat(op["_queued_at"]),
+        date_commande=_dt_naif(op["_queued_at"]),
+        date_remise_reelle=_dt_naif(op["_queued_at"]),
         marche_id=op.get("marche_id"),
     )
     db.add(commande)

@@ -52,9 +52,21 @@ def _ecrire_cle(key: str, value: str):
     via os.getenv() (SumUp, Brevo, Gemini, cookies, analytics...) voient la
     nouvelle valeur immédiatement, sans redémarrage du backend.
     """
-    ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
-    ENV_PATH.touch(exist_ok=True)
-    set_key(str(ENV_PATH), key, value)
+    try:
+        ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
+        ENV_PATH.touch(exist_ok=True)
+        set_key(str(ENV_PATH), key, value)
+    except OSError as e:
+        logger.error("Écriture impossible dans %s : %s", ENV_PATH, e)
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Impossible d'écrire la configuration sur le volume persistant. "
+                "Redémarrez la stack (docker compose up -d --build) pour réparer "
+                "les permissions, ou exécutez : docker compose exec -u root backend "
+                "chown -R appuser /app/data"
+            ),
+        )
     os.environ[key] = value
 
 def _masquer(val: Optional[str]) -> str:
