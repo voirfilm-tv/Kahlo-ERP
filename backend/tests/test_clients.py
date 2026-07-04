@@ -156,3 +156,17 @@ class TestEmailVide:
             "prenom": "Zoé", "nom": "Tz", "anniversaire": "1990-05-12T00:00:00.000Z",
         })
         assert resp.status_code == 201, resp.text
+
+
+class TestMouturePref:
+    async def test_creation_avec_mouture_payload_ui(self, client: AsyncClient, auth_headers):
+        """Payload exact du formulaire UI — la mouture (libellé) doit être
+        persistée telle quelle (regression : 500 sur PostgreSQL, l'enum DB
+        contient les libellés mais SQLAlchemy envoyait les noms internes)."""
+        resp = await client.post("/api/clients/", headers=auth_headers, json={
+            "prenom": "Marie", "nom": "Durand", "email": "", "telephone": "",
+            "ville": "", "profil": "florale", "mouture_pref": "Grains entiers",
+            "quantite_hab_g": 250,
+        })
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["mouture_pref"] == "Grains entiers"
