@@ -271,6 +271,35 @@ Voir la documentation détaillée et la reproduction locale : `docs/ci.md`.
 
 ## Déploiement production
 
+### ZimaOS / CasaOS / NAS (auto-hébergé)
+
+L'installation manuelle « une image Docker » de ZimaOS ne convient pas : Kahlo ERP est une stack de 5 conteneurs construite depuis les sources. Passez par le terminal (SSH) :
+
+```bash
+# 1. Récupérer les sources (dans le stockage persistant de ZimaOS)
+cd /DATA/AppData
+curl -L https://github.com/voirfilm-tv/Kahlo-ERP/archive/refs/heads/main.tar.gz | tar xz
+mv Kahlo-ERP-main kahlo-erp && cd kahlo-erp
+
+# 2. Configurer les secrets d'infrastructure (une seule fois)
+cp .env.example .env
+nano .env   # changez POSTGRES_PASSWORD, REDIS_PASSWORD, SECRET_KEY
+            # et APP_DEFAULT_PASSWORD — tout le reste (clés API, emails,
+            # cookies, CORS...) se règle ensuite dans l'interface
+            # Paramètres, sans jamais retoucher ce fichier
+
+# 3. Lancer la stack (publie l'ERP sur le port 8087 de la machine)
+docker compose -f docker-compose.yml -f docker-compose.selfhost.yml up -d --build
+```
+
+L'ERP est accessible sur `http://IP-du-NAS:8087` (port modifiable via `KAHLO_HTTP_PORT` dans le `.env`). Connexion initiale : `APP_USERNAME` / `APP_DEFAULT_PASSWORD` du `.env`.
+
+L'accès en HTTP local fonctionne directement — les cookies suivent automatiquement le protocole de la requête. Pour un accès HTTPS avec votre domaine, créez un proxy host dans Nginx Proxy Manager vers `IP-du-NAS:8087` et ajoutez le domaine dans Paramètres → Sécurité → Origines autorisées (CORS).
+
+La configuration saisie dans l'interface Paramètres est stockée sur le volume `config_data` : elle est appliquée immédiatement, prime sur le `.env` et survit aux mises à jour. Mise à jour de l'app : re-télécharger les sources puis relancer la commande du point 3.
+
+Si le mot de passe ne fonctionne pas alors que le `.env` est correct : l'admin a probablement été créé lors d'un premier démarrage avec l'ancienne valeur. Mettez `ADMIN_FORCE_RESET=true` dans le `.env`, relancez le backend (`docker compose up -d backend`), reconnectez-vous, puis repassez la variable à `false`.
+
 ### Derrière un reverse proxy existant
 
 Si vous avez déjà un reverse proxy (Nginx, Traefik, Caddy), vous pouvez retirer le service `nginx` du compose et exposer directement le backend et le frontend :

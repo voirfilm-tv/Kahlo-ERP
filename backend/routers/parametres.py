@@ -24,11 +24,13 @@ from routers.auth import verifier_token, require_admin, pwd_context
 
 router = APIRouter()
 
-ENV_PATH = Path(os.getenv("ENV_FILE_PATH", "/app/.env")).resolve()
+# Fichier de configuration géré par l'interface. Par défaut sur le volume
+# persistant /app/data (voir docker-compose) pour survivre aux rebuilds.
+ENV_PATH = Path(os.getenv("ENV_FILE_PATH", "/app/data/config.env")).resolve()
 # Sécurité : vérifier que le chemin reste dans /app/
 if not str(ENV_PATH).startswith("/app/"):
-    logger.error("ENV_FILE_PATH pointe hors de /app/ : %s — fallback sur /app/.env", ENV_PATH)
-    ENV_PATH = Path("/app/.env")
+    logger.error("ENV_FILE_PATH pointe hors de /app/ : %s — fallback sur /app/data/config.env", ENV_PATH)
+    ENV_PATH = Path("/app/data/config.env")
 
 
 # ============================================================
@@ -36,17 +38,21 @@ if not str(ENV_PATH).startswith("/app/"):
 # ============================================================
 
 def _lire_env() -> dict:
-    if not ENV_PATH.exists():
-        return {}
-    return dotenv_values(ENV_PATH)
+    """Configuration effective : variables du conteneur (docker-compose)
+    recouvertes par le fichier persistant écrit via l'interface."""
+    env = dict(os.environ)
+    if ENV_PATH.exists():
+        env.update({k: v for k, v in dotenv_values(ENV_PATH).items() if v is not None})
+    return env
 
 def _ecrire_cle(key: str, value: str):
-    """Écrit ou met à jour une variable dans le .env.
+    """Écrit ou met à jour une variable dans le fichier de config persistant.
 
     Met aussi à jour os.environ pour que les modules qui lisent la config
-    via os.getenv() (analytics, brevo, scheduler...) voient la nouvelle
-    valeur sans redémarrage du backend.
+    via os.getenv() (SumUp, Brevo, Gemini, cookies, analytics...) voient la
+    nouvelle valeur immédiatement, sans redémarrage du backend.
     """
+    ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
     ENV_PATH.touch(exist_ok=True)
     set_key(str(ENV_PATH), key, value)
     os.environ[key] = value
@@ -138,6 +144,8 @@ class ParametresSecurite(BaseModel):
     new_password: Optional[str] = None
     secret_key: Optional[str] = None
     session_longue: Optional[bool] = None
+    cookie_secure: Optional[str] = None   # auto | true | false
+    cors_origins: Optional[str] = None    # origines séparées par des virgules
 
 class ParametresSauvegarde(BaseModel):
     backup_auto: Optional[bool] = None
@@ -242,8 +250,10 @@ async def get_parametres(admin: dict = Depends(require_admin)):
             "vip_auto":          env.get("CRM_VIP_AUTO", "true") == "true",
         },
         "securite": {
-            "username":       env.get("APP_USERNAME", "kahlo"),
+            "username":       env.get("APP_USERNAME", os.getenv("APP_USERNAME", "kahlo")),
             "session_longue": env.get("SESSION_LONGUE", "true") == "true",
+            "cookie_secure":  env.get("COOKIE_SECURE", os.getenv("COOKIE_SECURE", "auto")),
+            "cors_origins":   env.get("CORS_ORIGINS", os.getenv("CORS_ORIGINS", "")),
         },
         "sauvegarde": {
             "backup_auto":      env.get("BACKUP_AUTO", "true") == "true",
@@ -373,6 +383,13 @@ async def sauvegarder_parametres(
         if s.secret_key and not _est_vide_ou_masque(s.secret_key):
             w("SECRET_KEY", s.secret_key)
         wb("SESSION_LONGUE", s.session_longue)
+        if s.cookie_secure is not None:
+            if s.cookie_secure not in ("auto", "true", "false"):
+                raise HTTPException(status_code=400, detail="cookie_secure doit être auto, true ou false")
+            _ecrire_cle("COOKIE_SECURE", s.cookie_secure)
+        if s.cors_origins is not None:
+            # Appliqué au prochain redémarrage (le middleware CORS est construit au boot)
+            w("CORS_ORIGINS", s.cors_origins)
 
     if data.sauvegarde:
         sv = data.sauvegarde

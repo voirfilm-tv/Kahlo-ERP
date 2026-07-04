@@ -1,0 +1,21 @@
+# ============================================================
+#  Kahlo ERP — Override auto-hébergement (ZimaOS, NAS, VPS nu)
+#
+#  Le docker-compose.yml de base est prévu pour Coolify : aucun
+#  port n'est publié sur l'hôte (le reverse proxy s'en charge).
+#  Cet override publie le frontend (point d'entrée unique qui
+#  proxifie déjà /api et /caldav) sur un port de l'hôte.
+#
+#  Usage :
+#    docker compose -f docker-compose.yml -f docker-compose.selfhost.yml up -d --build
+#
+#  L'ERP est ensuite accessible sur http://IP-de-la-machine:8087
+#  (port modifiable via KAHLO_HTTP_PORT dans le .env).
+#  Pour un accès HTTPS/domaine, pointez votre reverse proxy
+#  (ex: Nginx Proxy Manager) vers ce port.
+# ============================================================
+
+services:
+  frontend:
+    ports:
+      - "${KAHLO_HTTP_PORT:-8087}:80"

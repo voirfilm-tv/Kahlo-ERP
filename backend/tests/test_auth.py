@@ -113,6 +113,30 @@ class TestTokenValidation:
         assert resp.status_code == 200
 
 
+class TestCookieSecure:
+    async def test_cookies_non_secure_en_http(self, client: AsyncClient, admin_user):
+        """En mode auto, une requête HTTP (LAN/NAS) reçoit des cookies sans
+        l'attribut Secure — sinon le navigateur les rejette et le login boucle."""
+        resp = await client.post("/api/auth/login", json={
+            "username": "admin", "password": "testpassword123",
+        })
+        assert resp.status_code == 200
+        for h in resp.headers.get_list("set-cookie"):
+            assert "secure" not in h.lower()
+
+    async def test_cookies_secure_derriere_proxy_https(self, client: AsyncClient, admin_user):
+        """En mode auto, X-Forwarded-Proto: https (reverse proxy TLS) doit
+        produire des cookies Secure."""
+        resp = await client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "testpassword123"},
+            headers={"X-Forwarded-Proto": "https"},
+        )
+        assert resp.status_code == 200
+        for h in resp.headers.get_list("set-cookie"):
+            assert "secure" in h.lower()
+
+
 class TestHealthCheck:
     async def test_health(self, client: AsyncClient):
         resp = await client.get("/api/health")

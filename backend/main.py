@@ -3,6 +3,10 @@ KAHLO CAFÉ — ERP Backend
 FastAPI — Point d'entrée principal
 """
 
+# La config persistée via la page Paramètres doit être chargée AVANT les
+# imports applicatifs (certains modules lisent l'environnement à l'import).
+import runtime_config  # noqa: F401  isort: skip
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse

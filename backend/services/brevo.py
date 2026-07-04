@@ -9,24 +9,36 @@ from functools import partial
 
 logger = logging.getLogger(__name__)
 
-configuration = sib_api_v3_sdk.Configuration()
-configuration.api_key["api-key"] = os.getenv("BREVO_API_KEY", "")
+# Configuration lue à chaque appel : les valeurs saisies dans la page
+# Paramètres s'appliquent sans redémarrage du backend.
+
+def _configuration():
+    configuration = sib_api_v3_sdk.Configuration()
+    configuration.api_key["api-key"] = os.getenv("BREVO_API_KEY", "")
+    return configuration
 
 
 def _get_contacts_api():
-    return sib_api_v3_sdk.ContactsApi(sib_api_v3_sdk.ApiClient(configuration))
+    return sib_api_v3_sdk.ContactsApi(sib_api_v3_sdk.ApiClient(_configuration()))
 
 def _get_transac_api():
-    return sib_api_v3_sdk.TransactionalEmailsApi(sib_api_v3_sdk.ApiClient(configuration))
+    return sib_api_v3_sdk.TransactionalEmailsApi(sib_api_v3_sdk.ApiClient(_configuration()))
 
 
-_BREVO_LIST_CLIENTS = int(os.getenv("BREVO_LIST_CLIENTS", "3"))
-_BREVO_LIST_RELANCE = int(os.getenv("BREVO_LIST_RELANCE", "7"))
-_BREVO_TPL_ANNIVERSAIRE = int(os.getenv("BREVO_TPL_ANNIVERSAIRE", "1"))
-_BREVO_TPL_CONFIRMATION = int(os.getenv("BREVO_TPL_CONFIRMATION", "2"))
-_BREVO_TPL_PRETE = int(os.getenv("BREVO_TPL_PRETE", "3"))
-_BREVO_FROM_EMAIL = os.getenv("BREVO_FROM_EMAIL", "bonjour@kahlocafe.fr")
-_BREVO_FROM_NAME = os.getenv("BREVO_FROM_NAME", "Kahlo Café")
+def _int_env(key: str, default: str) -> int:
+    try:
+        return int(os.getenv(key, default) or default)
+    except ValueError:
+        return int(default)
+
+def _liste_clients():     return _int_env("BREVO_LIST_CLIENTS", "3")
+def _liste_relance():     return _int_env("BREVO_LIST_RELANCE", "7")
+def _tpl_anniversaire():  return _int_env("BREVO_TPL_ANNIVERSAIRE", "1")
+def _tpl_confirmation():  return _int_env("BREVO_TPL_CONFIRMATION", "2")
+def _tpl_prete():         return _int_env("BREVO_TPL_PRETE", "3")
+def _expediteur():
+    return {"email": os.getenv("BREVO_FROM_EMAIL", "bonjour@kahlocafe.fr"),
+            "name": os.getenv("BREVO_FROM_NAME", "Kahlo Café")}
 
 
 async def _run_sync(func, *args, **kwargs):
@@ -54,7 +66,7 @@ async def sync_client_brevo(client) -> str:
                 "TAMPONS": client.tampons,
                 "VIP": str(client.vip),
             },
-            list_ids=[_BREVO_LIST_CLIENTS],
+            list_ids=[_liste_clients()],
             update_enabled=True
         )
         result = await _run_sync(api.create_contact, contact)
@@ -71,12 +83,12 @@ async def envoyer_email_anniversaire(client):
     try:
         email = sib_api_v3_sdk.SendSmtpEmail(
             to=[{"email": client.email, "name": f"{client.prenom} {client.nom}"}],
-            template_id=_BREVO_TPL_ANNIVERSAIRE,
+            template_id=_tpl_anniversaire(),
             params={
                 "PRENOM": client.prenom,
                 "PROFIL": client.profil or "cliente fidèle",
             },
-            sender={"email": _BREVO_FROM_EMAIL, "name": _BREVO_FROM_NAME}
+            sender=_expediteur()
         )
         await _run_sync(api.send_transac_email, email)
         logger.info(f"Email anniversaire envoyé à {client.email}")
@@ -92,14 +104,14 @@ async def notifier_client_paiement_recu(commande):
     try:
         email = sib_api_v3_sdk.SendSmtpEmail(
             to=[{"email": commande.client.email, "name": f"{commande.client.prenom}"}],
-            template_id=_BREVO_TPL_CONFIRMATION,
+            template_id=_tpl_confirmation(),
             params={
                 "PRENOM": commande.client.prenom,
                 "NUMERO": commande.numero,
                 "MONTANT": f"{commande.montant_total:.2f}",
                 "MARCHE": "votre prochain marché",
             },
-            sender={"email": _BREVO_FROM_EMAIL, "name": _BREVO_FROM_NAME}
+            sender=_expediteur()
         )
         await _run_sync(api.send_transac_email, email)
         logger.info(f"Confirmation commande envoyée: {commande.numero}")
@@ -115,13 +127,13 @@ async def notifier_commande_prete(commande):
     try:
         email = sib_api_v3_sdk.SendSmtpEmail(
             to=[{"email": commande.client.email}],
-            template_id=_BREVO_TPL_PRETE,
+            template_id=_tpl_prete(),
             params={
                 "PRENOM": commande.client.prenom,
                 "MARCHE": commande.marche.nom if commande.marche else "notre prochain marché",
                 "NUMERO": commande.numero,
             },
-            sender={"email": _BREVO_FROM_EMAIL, "name": _BREVO_FROM_NAME}
+            sender=_expediteur()
         )
         await _run_sync(api.send_transac_email, email)
     except ApiException as e:
@@ -134,7 +146,7 @@ async def declencher_workflow_relance(client):
     try:
         await _run_sync(
             api.add_contact_to_list,
-            list_id=_BREVO_LIST_RELANCE,
+            list_id=_liste_relance(),
             contacts_emails={"emails": [client.email]}
         )
         logger.info(f"Workflow relance déclenché: {client.email}")

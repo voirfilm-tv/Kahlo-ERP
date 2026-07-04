@@ -78,8 +78,23 @@ SESSION_HOURS = int(os.getenv("SESSION_HOURS", "8"))
 _COOKIE_NAME = "kahlo_session"
 _CSRF_COOKIE_NAME = "kahlo_csrf"
 _CSRF_HEADER_NAME = "x-csrf-token"
-_is_prod = os.getenv("SECRET_KEY", "") not in {"", "dev_key", "dev-secret-key-change-in-production", "changeme"}
-_COOKIE_SECURE = _is_prod  # True en production (HTTPS), False en dev
+def _cookie_secure(request: Request) -> bool:
+    """Attribut Secure des cookies de session/CSRF, évalué à chaque requête
+    (modifiable à chaud depuis la page Paramètres → Sécurité) :
+      auto (défaut) → suit le protocole réel de la requête (X-Forwarded-Proto
+                      posé par le reverse proxy, sinon schéma direct). HTTPS
+                      → cookies Secure ; HTTP LAN (NAS/ZimaOS) → cookies
+                      classiques, sans configuration à faire.
+      true          → forcé (HTTPS obligatoire, anti-downgrade)
+      false         → jamais Secure (débogage uniquement)
+    """
+    v = os.getenv("COOKIE_SECURE", "auto").strip().lower()
+    if v in {"true", "1", "yes"}:
+        return True
+    if v in {"false", "0", "no"}:
+        return False
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    return proto.lower() == "https"
 
 
 # ============================================================
@@ -147,8 +162,9 @@ def persist_secret_key_if_needed():
         return
 
     from pathlib import Path
-    env_path = Path(os.getenv("ENV_FILE_PATH", "/app/.env"))
+    env_path = Path(os.getenv("ENV_FILE_PATH", "/app/data/config.env"))
     try:
+        env_path.parent.mkdir(parents=True, exist_ok=True)
         if not env_path.exists():
             env_path.touch(mode=0o600)
 
@@ -291,7 +307,7 @@ async def login(data: LoginData, request: Request, response: Response, db: Async
         key=_COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=_COOKIE_SECURE,
+        secure=_cookie_secure(request),
         samesite="lax",
         max_age=max_age,
         path="/",
@@ -302,7 +318,7 @@ async def login(data: LoginData, request: Request, response: Response, db: Async
         key=_CSRF_COOKIE_NAME,
         value=csrf_token,
         httponly=False,
-        secure=_COOKIE_SECURE,
+        secure=_cookie_secure(request),
         samesite="lax",
         max_age=max_age,
         path="/",
