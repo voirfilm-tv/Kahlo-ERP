@@ -16,7 +16,8 @@ export default function Login() {
   const loginStore = useAuthStore((s) => s.login);
   const navigate = useNavigate();
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e) => {
+    if (e) e.preventDefault();
     setError("");
     setLoading(true);
     try {
@@ -66,12 +67,12 @@ export default function Login() {
         <div style={{ fontFamily: "'Raleway', sans-serif", fontWeight: 900, fontSize: 32, color: C.gold, letterSpacing: 3 }}>KAHLO</div>
         <div style={{ fontFamily: "'Raleway', sans-serif", fontWeight: 300, fontSize: 11, color: C.rose, letterSpacing: 6, marginBottom: 40 }}>CAFÉ · ERP</div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {/* Vrai <form> : soumission Entrée native + gestionnaires de mots de passe */}
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <input
             className="login-input"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
             placeholder="Identifiant"
             autoComplete="username"
             style={{
@@ -88,7 +89,6 @@ export default function Login() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
             placeholder="Mot de passe"
             autoComplete="current-password"
             style={{
@@ -105,7 +105,7 @@ export default function Login() {
 
           <button
             className="login-btn"
-            onClick={handleSubmit}
+            type="submit"
             disabled={loading}
             style={{
               background: `linear-gradient(135deg, ${C.prune}, ${C.gold})`,
@@ -118,7 +118,7 @@ export default function Login() {
           >
             {loading ? "Connexion..." : "Se connecter"}
           </button>
-        </div>
+        </form>
 
         <div style={{ fontSize: 11, color: "rgba(223,207,196,0.2)", marginTop: 32 }}>
           Kahlo Café · Usage interne uniquement

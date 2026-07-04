@@ -79,7 +79,19 @@ _COOKIE_NAME = "kahlo_session"
 _CSRF_COOKIE_NAME = "kahlo_csrf"
 _CSRF_HEADER_NAME = "x-csrf-token"
 _is_prod = os.getenv("SECRET_KEY", "") not in {"", "dev_key", "dev-secret-key-change-in-production", "changeme"}
-_COOKIE_SECURE = _is_prod  # True en production (HTTPS), False en dev
+
+# Attribut Secure des cookies de session/CSRF :
+#   auto (défaut) → activé dès qu'une vraie SECRET_KEY est configurée (HTTPS attendu)
+#   false         → accès HTTP possible (LAN/NAS type ZimaOS sans TLS) ;
+#                   sans ça le navigateur rejette les cookies en http:// et
+#                   le login boucle sur /login. À repasser en auto/true en HTTPS.
+_cookie_secure_env = os.getenv("COOKIE_SECURE", "auto").strip().lower()
+if _cookie_secure_env in {"true", "1", "yes"}:
+    _COOKIE_SECURE = True
+elif _cookie_secure_env in {"false", "0", "no"}:
+    _COOKIE_SECURE = False
+else:
+    _COOKIE_SECURE = _is_prod
 
 
 # ============================================================

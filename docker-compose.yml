@@ -92,6 +92,7 @@ services:
       APP_DEFAULT_PASSWORD: ${APP_DEFAULT_PASSWORD:-changeme}
       ADMIN_FORCE_RESET: ${ADMIN_FORCE_RESET:-false}
       SESSION_HOURS: ${SESSION_HOURS:-8}
+      COOKIE_SECURE: ${COOKIE_SECURE:-auto}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://erp.kahlocafe.fr}
       BREVO_FROM_EMAIL: ${BREVO_FROM_EMAIL:-bonjour@kahlocafe.fr}
       BREVO_FROM_NAME: ${BREVO_FROM_NAME:-Kahlo Café}

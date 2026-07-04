@@ -285,6 +285,8 @@ mv Kahlo-ERP-main kahlo-erp && cd kahlo-erp
 cp .env.example .env
 nano .env   # changez POSTGRES_PASSWORD, REDIS_PASSWORD, SECRET_KEY,
             # APP_DEFAULT_PASSWORD et CALDAV_PASSWORD
+            # + COOKIE_SECURE=false si vous accédez en HTTP (pas de HTTPS) :
+            # sans ça le navigateur rejette les cookies et le login boucle
 
 # 3. Lancer la stack (publie l'ERP sur le port 8087 de la machine)
 docker compose -f docker-compose.yml -f docker-compose.selfhost.yml up -d --build
@@ -292,7 +294,9 @@ docker compose -f docker-compose.yml -f docker-compose.selfhost.yml up -d --buil
 
 L'ERP est accessible sur `http://IP-du-NAS:8087` (port modifiable via `KAHLO_HTTP_PORT` dans le `.env`). Connexion initiale : `APP_USERNAME` / `APP_DEFAULT_PASSWORD` du `.env`.
 
-Pour un accès HTTPS avec votre domaine, créez un proxy host dans Nginx Proxy Manager vers `IP-du-NAS:8087` et ajoutez le domaine dans `CORS_ORIGINS`. Mise à jour : re-télécharger les sources puis relancer la commande du point 3.
+Pour un accès HTTPS avec votre domaine, créez un proxy host dans Nginx Proxy Manager vers `IP-du-NAS:8087`, ajoutez le domaine dans `CORS_ORIGINS` et repassez `COOKIE_SECURE=auto`. Mise à jour : re-télécharger les sources puis relancer la commande du point 3.
+
+Si le mot de passe ne fonctionne pas alors que le `.env` est correct : l'admin a probablement été créé lors d'un premier démarrage avec l'ancienne valeur. Mettez `ADMIN_FORCE_RESET=true` dans le `.env`, relancez le backend (`docker compose up -d backend`), reconnectez-vous, puis repassez la variable à `false`.
 
 ### Derrière un reverse proxy existant
 
