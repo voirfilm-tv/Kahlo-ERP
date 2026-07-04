@@ -115,6 +115,9 @@ services:
       - factures_data:/app/factures
       - backups_data:/backups/kahlo
       - config_data:/app/data
+      # Volume Radicale partagé : l'ERP écrit lui-même le htpasswd CalDAV
+      # (mot de passe auto-généré, rotation depuis l'interface)
+      - caldav_data:/app/caldav-data
     expose:
       - "8000"
     healthcheck:

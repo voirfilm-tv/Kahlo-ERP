@@ -63,14 +63,18 @@ def start_scheduler():
         replace_existing=True,
     )
 
-    # Sync CalDAV toutes les 30 minutes
+    # Sync CalDAV : tick chaque seconde, auto-throttlé selon la fréquence
+    # configurée (CALDAV_INTERVAL_SECONDS, modifiable à chaud, jusqu'à 1 s).
+    # Coût quasi nul : une empreinte ctag est vérifiée avant toute vraie sync.
     scheduler.add_job(
-        sync_caldav,
+        sync_caldav_tick,
         "interval",
-        minutes=30,
+        seconds=1,
         id="sync_caldav",
         name="Sync CalDAV bidirectionnel",
         replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )
 
     scheduler.start()
@@ -227,12 +231,50 @@ async def sync_ventes_sumup():
         logger.error("Erreur sync_ventes_sumup (API indisponible ?): %s", e)
 
 
+def _caldav_interval_seconds() -> int:
+    """Fréquence de sync CalDAV, lue à chaud (Paramètres → Calendrier).
+    CALDAV_INTERVAL_SECONDS prime ; sinon l'ancien CALDAV_INTERVAL (minutes)."""
+    import os
+    try:
+        brut = os.getenv("CALDAV_INTERVAL_SECONDS")
+        if brut:
+            return max(1, int(brut))
+        legacy = os.getenv("CALDAV_INTERVAL")
+        if legacy:
+            return max(1, int(legacy) * 60)
+    except ValueError:
+        pass
+    return 300
+
+
+import time as _time
+_derniere_sync_caldav = 0.0
+
+
+async def sync_caldav_tick():
+    """Tick 1 s : ne synchronise que si la fréquence configurée est écoulée
+    ET que les calendriers ont réellement changé (empreinte ctag)."""
+    global _derniere_sync_caldav
+    if _time.monotonic() - _derniere_sync_caldav < _caldav_interval_seconds():
+        return
+    _derniere_sync_caldav = _time.monotonic()
+    await sync_caldav()
+
+
 async def sync_caldav():
-    """Sync bidirectionnelle CalDAV toutes les 30 minutes"""
+    """Sync entrante CalDAV (appareils → ERP), déclenchée par le tick."""
     from database import AsyncSessionLocal
-    from services.calendrier import sync_caldav_vers_db
+    from services.calendrier import sync_caldav_vers_db, caldav_a_change
 
     try:
+        # Court-circuit : rien n'a bougé côté Radicale → pas de vraie sync
+        change = await caldav_a_change()
+        if change is False:
+            return
+        if change is None:
+            logger.debug("CalDAV injoignable — sync sautée")
+            return
+
         async with AsyncSessionLocal() as db:
             nouveaux = await sync_caldav_vers_db(db)
             if nouveaux:

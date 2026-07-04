@@ -7,8 +7,10 @@ import {
   changerMotDePasse, getUtilisateurs, creerUtilisateur, modifierUtilisateur, supprimerUtilisateur,
   getDomaines, ajouterDomaine, verifierDomaine, modifierDomaine, supprimerDomaine,
   getSystemUpdateStatus, verifierMiseAJourSysteme, lancerMiseAJourSysteme,
+  getConnexionCalDAV, regenererMotDePasseCalDAV, genererLienAppleCalDAV,
   extractError,
 } from "../services/api";
+import { QRCodeSVG } from "qrcode.react";
 const C = {
   espresso: "#261810",
   gold: "#C18A4A",
@@ -343,31 +345,142 @@ function SectionBrevo({ cfg, set }) {
     </div>
   );
 }
+function ChampCopiable({ label, value, masque = false }) {
+  const [copie, setCopie] = useState(false);
+  const [visible, setVisible] = useState(!masque);
+  const copier = () => {
+    navigator.clipboard.writeText(value || "");
+    setCopie(true);
+    setTimeout(() => setCopie(false), 1800);
+  };
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 10, color: "rgba(223,207,196,0.35)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 5 }}>{label}</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ flex: 1, background: "rgba(0,0,0,0.3)", border: "1px solid rgba(193,138,74,0.15)", borderRadius: 10, padding: "10px 14px", fontFamily: "monospace", fontSize: 12, color: C.creme, overflowX: "auto", whiteSpace: "nowrap" }}>
+          {visible ? (value || "—") : "••••••••••••"}
+        </div>
+        {masque && (
+          <button onClick={() => setVisible(!visible)} style={{ background: "rgba(193,138,74,0.08)", border: "1px solid rgba(193,138,74,0.2)", borderRadius: 10, padding: "0 12px", color: C.gold, cursor: "pointer", fontSize: 12, fontFamily: "'Outfit', sans-serif" }}>
+            {visible ? "Masquer" : "Voir"}
+          </button>
+        )}
+        <button onClick={copier} style={{ background: copie ? "rgba(74,222,128,0.12)" : "rgba(193,138,74,0.08)", border: `1px solid ${copie ? "rgba(74,222,128,0.3)" : "rgba(193,138,74,0.2)"}`, borderRadius: 10, padding: "0 14px", color: copie ? C.green : C.gold, cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "'Outfit', sans-serif", whiteSpace: "nowrap" }}>
+          {copie ? "✓ Copié" : "Copier"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const FREQUENCES_SYNC = [
+  { v: "1",    l: "⚡ Temps réel — toutes les secondes" },
+  { v: "5",    l: "Toutes les 5 secondes" },
+  { v: "15",   l: "Toutes les 15 secondes" },
+  { v: "30",   l: "Toutes les 30 secondes" },
+  { v: "60",   l: "Toutes les minutes" },
+  { v: "300",  l: "Toutes les 5 minutes" },
+  { v: "900",  l: "Toutes les 15 minutes" },
+  { v: "1800", l: "Toutes les 30 minutes" },
+];
+
 function SectionCalendrier({ cfg, set }) {
+  const qc = useQueryClient();
+  const [lienApple, setLienApple] = useState(null);
+  const [msg, setMsg] = useState(null);
+
+  const { data: connexion, isLoading: loadingCx } = useQuery({
+    queryKey: ["caldav-connexion"],
+    queryFn: getConnexionCalDAV,
+  });
+
+  const lienMutation = useMutation({
+    mutationFn: genererLienAppleCalDAV,
+    onSuccess: (d) => setLienApple(d),
+    onError: (err) => setMsg({ ok: false, text: extractError(err, "Impossible de générer le lien") }),
+  });
+
+  const regenMutation = useMutation({
+    mutationFn: regenererMotDePasseCalDAV,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["caldav-connexion"] });
+      setLienApple(null);
+      setMsg({ ok: true, text: "Nouveau mot de passe généré — reconfigurez vos appareils (nouveau QR code)" });
+    },
+    onError: (err) => setMsg({ ok: false, text: extractError(err, "Impossible de régénérer le mot de passe") }),
+  });
+
   return (
     <div>
-      <SectionTitle>Apple Calendar (CalDAV)</SectionTitle>
+      <SectionTitle>Connecter un appareil (iPhone, Mac, Android...)</SectionTitle>
       <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 12, padding: 16, marginBottom: 20, fontSize: 12, color: "rgba(223,207,196,0.5)", lineHeight: 1.8 }}>
-        Synchronisation bidirectionnelle avec l'app Calendrier Apple (iPhone, Mac). Les marchés et rappels créés dans l'ERP apparaissent dans votre calendrier natif, et vice-versa.
+        L'ERP héberge et gère son propre serveur de calendrier — <b style={{ color: C.creme }}>rien à installer,
+        rien à configurer</b> : le mot de passe est généré automatiquement. Scannez le QR code (Apple) ou copiez
+        les informations ci-dessous. Les marchés et rappels de l'ERP apparaissent sur vos appareils, et inversement.
       </div>
-      <Field label="URL du serveur CalDAV" hint="À configurer dans iPhone → Réglages → Calendrier → Comptes → Autre → Compte CalDAV">
-        <div style={{ background: "rgba(0,0,0,0.3)", border: `1px solid rgba(193,138,74,0.15)`, borderRadius: 10, padding: "10px 14px", fontFamily: "monospace", fontSize: 12, color: "rgba(223,207,196,0.5)" }}>
-          http://VOTRE-IP/caldav/kahlo/
+
+      {msg && (
+        <div style={{ padding: "10px 14px", borderRadius: 10, marginBottom: 14, fontSize: 12, background: msg.ok ? "rgba(74,222,128,0.08)" : "rgba(232,160,184,0.08)", color: msg.ok ? C.green : C.red, border: `1px solid ${msg.ok ? "rgba(74,222,128,0.2)" : "rgba(232,160,184,0.2)"}` }}>
+          {msg.ok ? "✓" : "✗"} {msg.text}
         </div>
-      </Field>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        <Field label="Identifiant CalDAV">
-          <Input value={cfg.caldav_user} onChange={v => set("caldav_user", v)} placeholder="kahlo" />
-        </Field>
-        <Field label="Mot de passe CalDAV">
-          <Input value={cfg.caldav_password} onChange={v => set("caldav_password", v)} placeholder="••••••••" type="password" />
-        </Field>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 20, marginBottom: 24 }}>
+        {/* Infos à copier */}
+        <div style={{ background: "rgba(0,0,0,0.15)", borderRadius: 14, padding: 18 }}>
+          {loadingCx ? <div style={{ fontSize: 12, color: "rgba(223,207,196,0.4)" }}>Chargement...</div> : <>
+            <ChampCopiable label="Adresse du serveur" value={connexion?.url} />
+            <ChampCopiable label="Identifiant" value={connexion?.username} />
+            <ChampCopiable label="Mot de passe (géré par l'ERP)" value={connexion?.password} masque />
+            <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 4 }}>
+              <button onClick={() => { if (window.confirm("Régénérer le mot de passe ? Les appareils déjà connectés devront être reconfigurés.")) regenMutation.mutate(); }}
+                disabled={regenMutation.isPending}
+                style={{ background: "rgba(232,160,184,0.08)", border: "1px solid rgba(232,160,184,0.2)", borderRadius: 10, padding: "8px 14px", color: C.red, cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "'Outfit', sans-serif" }}>
+                ↻ Régénérer le mot de passe
+              </button>
+              {connexion && connexion.gestion_auto === false && (
+                <span style={{ fontSize: 11, color: C.red }}>⚠ volume partagé absent — relancez : docker compose up -d --build</span>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: "rgba(223,207,196,0.3)", marginTop: 12, lineHeight: 1.7 }}>
+              <b>Android :</b> installez DAVx⁵ (gratuit, F-Droid/Play Store) → « Connexion avec URL et nom d'utilisateur » → collez les 3 champs ci-dessus.<br />
+              <b>Configuration manuelle iPhone :</b> Réglages → Apps → Calendrier → Comptes → Autre → Compte CalDAV.
+            </div>
+          </>}
+        </div>
+
+        {/* QR code Apple */}
+        <div style={{ background: "rgba(0,0,0,0.15)", borderRadius: 14, padding: 18, textAlign: "center" }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: C.gold, marginBottom: 10 }}> iPhone / iPad / Mac — automatique</div>
+          {lienApple ? (
+            <>
+              <div style={{ background: "white", borderRadius: 12, padding: 12, display: "inline-block" }}>
+                <QRCodeSVG value={lienApple.url} size={168} />
+              </div>
+              <div style={{ fontSize: 11, color: "rgba(223,207,196,0.45)", marginTop: 10, lineHeight: 1.7 }}>
+                Scannez avec l'appareil photo → installez le profil :<br />le calendrier se configure tout seul.
+                <br /><span style={{ color: "rgba(223,207,196,0.3)" }}>Lien valable {lienApple.expire_minutes} min.</span>
+              </div>
+              <a href={lienApple.url} style={{ display: "inline-block", marginTop: 8, fontSize: 11, color: C.gold }}>ou télécharger le profil sur cet appareil</a>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 40, margin: "18px 0" }}>📱</div>
+              <button onClick={() => lienMutation.mutate()} disabled={lienMutation.isPending}
+                style={{ background: `linear-gradient(135deg, ${C.prune}, ${C.gold})`, border: "none", borderRadius: 10, padding: "10px 18px", color: "white", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "'Outfit', sans-serif" }}>
+                {lienMutation.isPending ? "Génération..." : "Afficher le QR code"}
+              </button>
+              <div style={{ fontSize: 11, color: "rgba(223,207,196,0.35)", marginTop: 10, lineHeight: 1.7 }}>
+                Un scan → le compte calendrier<br />s'installe automatiquement.
+              </div>
+            </>
+          )}
+        </div>
       </div>
-      <Field label="Intervalle de sync automatique">
+
+      <Field label="Fréquence de synchronisation" hint="Peu coûteux même en temps réel : l'ERP vérifie d'abord une empreinte légère et ne synchronise que si quelque chose a changé. Appliqué immédiatement.">
         <select value={cfg.caldav_interval} onChange={e => set("caldav_interval", e.target.value)} style={{ background: "rgba(0,0,0,0.3)", border: `1px solid rgba(193,138,74,0.15)`, borderRadius: 10, padding: "10px 14px", color: C.creme, width: "100%", fontFamily: "'Outfit', sans-serif", fontSize: 13, outline: "none" }}>
-          <option value="15">Toutes les 15 minutes</option>
-          <option value="30">Toutes les 30 minutes</option>
-          <option value="60">Toutes les heures</option>
+          {FREQUENCES_SYNC.map(f => <option key={f.v} value={f.v}>{f.l}</option>)}
         </select>
       </Field>
       <SectionTitle>Google Calendar (OAuth)</SectionTitle>
@@ -1081,7 +1194,7 @@ const DEFAULT_STATE = {
   general: { nom: "Kahlo Café", ville: "Lyon, France", email: "bonjour@kahlocafe.fr", tel: "", objectif_ca: "3500", devise: "EUR", timezone: "Europe/Paris", format_date: "dd/MM/yyyy" },
   sumup: { api_key: "", merchant_email: "", webhook_secret: "", mode: "sandbox", public_url: "", configure: false },
   brevo: { api_key: "", from_email: "bonjour@kahlocafe.fr", from_name: "Kahlo Café", tpl_anniversaire: "", tpl_confirmation: "", tpl_prete: "", tpl_relance: "", liste_clients: "", liste_vip: "", liste_relance: "", envoi_anniversaire: true, envoi_relance: true, envoi_confirmation: true, envoi_prete: true },
-  calendrier: { caldav_user: "kahlo", caldav_password: "", caldav_interval: "30", google_client_id: "", google_client_secret: "", sync_marches: true, sync_commandes: true, sync_fournisseurs: false },
+  calendrier: { caldav_user: "kahlo", caldav_password: "", caldav_interval: "300", google_client_id: "", google_client_secret: "", sync_marches: true, sync_commandes: true, sync_fournisseurs: false },
   ia: { api_key: "", model: "gemini-1.5-flash", analyse_marche: true, suggestion_stock: true, fiche_produit: true, analyse_dashboard: false },
   stock: { seuil_alerte: "3", alerte_dlc_jours: "30", lot_vieux_jours: "90", fifo_auto: true, alerte_rupture: true, bon_commande_auto: false, qte_min_reappro: "5" },
   crm: { tampons_max: "10", recompense_label: "1 café offert (250g au choix)", inactivite_jours: "45", anniv_jours_avant: "14", vip_ca_seuil: "200", vip_auto: true },
