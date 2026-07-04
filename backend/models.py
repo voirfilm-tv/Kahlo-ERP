@@ -57,6 +57,14 @@ class Mouture(str, enum.Enum):
     italienne = "Cafetière italienne"
     chemex = "Chemex"
 
+# L'enum Mouture a des noms internes ≠ libellés (grains ≠ "Grains entiers").
+# Le type PostgreSQL créé par la migration contient les LIBELLÉS ; il faut
+# donc forcer SQLAlchemy à persister .value (par défaut il envoie .name, ce
+# qui fait échouer chaque INSERT côté PostgreSQL — invisible sous SQLite).
+def _enum_par_valeur(enum_cls, **kw):
+    return Enum(enum_cls, values_callable=lambda e: [m.value for m in e], **kw)
+
+
 class CategorieInvestissement(str, enum.Enum):
     materiel = "materiel"          # imprimante, kakemono...
     consommable = "consommable"    # étiquettes, stickers, sacs kraft...
@@ -193,7 +201,7 @@ class Client(Base):
     ville           = Column(String(200))
     anniversaire    = Column(DateTime)
     profil          = Column(Enum(ProfilKahlo))
-    mouture_pref    = Column(Enum(Mouture))
+    mouture_pref    = Column(_enum_par_valeur(Mouture))
     quantite_hab_g  = Column(Integer, default=250)
     origines_fav    = Column(JSON, default=list)  # ["Éthiopie", "Kenya"]
     marches_freq    = Column(JSON, default=list)  # ["Croix-Rousse"]
@@ -264,7 +272,7 @@ class LigneCommande(Base):
     commande_id = Column(Integer, ForeignKey("commandes.id", ondelete="CASCADE"), nullable=False)
     lot_id     = Column(Integer, ForeignKey("lots.id", ondelete="RESTRICT"), nullable=False)
     poids_g    = Column(Integer, nullable=False)     # 250, 500, 1000
-    mouture    = Column(Enum(Mouture))
+    mouture    = Column(_enum_par_valeur(Mouture))
     prix_unitaire = Column(Float, nullable=False)
 
     commande = relationship("Commande", back_populates="lignes")
