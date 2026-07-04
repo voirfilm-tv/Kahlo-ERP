@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import Layout from "../components/Layout";
-import { getAnalyticsGeneral, getAnalyticsMarches, getAnalyticsOrigines, getAnalyticsClients, getAnalyseIA, extractError } from "../services/api";
+import { getAnalyticsGeneral, getAnalyticsMarches, getAnalyticsOrigines, getAnalyticsClients, getAnalyseIA, getStatutSumUp, getVentesSumUp, syncVentesSumUp, extractError } from "../services/api";
+import { useQueryClient } from "@tanstack/react-query";
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 
 const C = {
@@ -110,10 +111,13 @@ export default function Analytics() {
 
         {/* Tabs */}
         <div style={{ display: "flex", gap: 6, marginBottom: 24 }}>
-          {[["general","◈ Général"],["marches","▦ Marchés"],["origines","◉ Origines"],["clients","◎ Clients"]].map(([k, l]) => (
+          {[["general","◈ Général"],["marches","▦ Marchés"],["origines","◉ Origines"],["clients","◎ Clients"],["sumup","💳 SumUp"]].map(([k, l]) => (
             <button key={k} className={tab === k ? "tab-a" : "tab-i"} onClick={() => setTab(k)}>{l}</button>
           ))}
         </div>
+
+        {/* TAB SUMUP — ventes réelles importées via l'API */}
+        {tab === "sumup" && <TabSumUp />}
 
         {/* TAB GÉNÉRAL */}
         {tab === "general" && (
@@ -292,5 +296,146 @@ export default function Analytics() {
         )}
       </div>
     </Layout>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+//  TAB SUMUP — CA réel, frais, ventes importées + sync manuelle
+// ════════════════════════════════════════════════════════════
+function TabSumUp() {
+  const qc = useQueryClient();
+  const [jours, setJours] = useState("30");
+  const [msg, setMsg] = useState(null);
+
+  const { data: statut } = useQuery({
+    queryKey: ["sumup-statut"],
+    queryFn: getStatutSumUp,
+  });
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["sumup-ventes", jours],
+    queryFn: () => getVentesSumUp({ jours: parseInt(jours), limit: 100 }),
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: () => syncVentesSumUp(),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ["sumup-ventes"] });
+      qc.invalidateQueries({ queryKey: ["sumup-statut"] });
+      qc.invalidateQueries({ queryKey: ["lots"] });
+      setMsg({ ok: true, text: `${r.importees} vente(s) importée(s) · ${r.stock_maj} stock(s) mis à jour · ${r.remboursements} remboursement(s)` });
+    },
+    onError: (err) => setMsg({ ok: false, text: extractError(err, "Erreur de synchronisation SumUp") }),
+  });
+
+  const stats = data?.stats;
+  const ventes = data?.ventes || [];
+
+  if (statut && !statut.configure) {
+    return (
+      <div className="card" style={{ padding: 40, textAlign: "center" }}>
+        <div style={{ fontSize: 28, marginBottom: 12 }}>💳</div>
+        <div style={{ fontFamily: "'Raleway', sans-serif", fontWeight: 700, fontSize: 15, marginBottom: 8 }}>SumUp n'est pas encore connecté</div>
+        <div style={{ fontSize: 13, color: "rgba(223,207,196,0.45)", lineHeight: 1.8, maxWidth: 460, margin: "0 auto" }}>
+          Ajoutez votre clé API dans <b style={{ color: C.gold }}>Paramètres → SumUp</b> pour importer
+          automatiquement vos ventes (terminal et en ligne), suivre votre chiffre d'affaires réel,
+          les frais SumUp, et mettre à jour le stock à chaque vente.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {/* Barre d'actions */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <select value={jours} onChange={e => setJours(e.target.value)} style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(193,138,74,0.15)", borderRadius: 10, padding: "8px 14px", color: C.creme, fontFamily: "'Outfit', sans-serif", fontSize: 12, outline: "none" }}>
+            <option value="7">7 derniers jours</option>
+            <option value="30">30 derniers jours</option>
+            <option value="90">90 derniers jours</option>
+            <option value="365">12 derniers mois</option>
+          </select>
+          {statut?.derniere_sync && (
+            <span style={{ fontSize: 11, color: "rgba(223,207,196,0.35)" }}>
+              Dernière sync : {new Date(statut.derniere_sync).toLocaleString("fr-FR")} · auto toutes les 15 min
+            </span>
+          )}
+        </div>
+        <button
+          onClick={() => syncMutation.mutate()}
+          disabled={syncMutation.isPending}
+          style={{ background: `linear-gradient(135deg, ${C.prune}, ${C.gold})`, border: "none", borderRadius: 10, padding: "8px 18px", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Outfit', sans-serif", opacity: syncMutation.isPending ? 0.6 : 1 }}
+        >
+          {syncMutation.isPending ? "Synchronisation..." : "↺ Synchroniser maintenant"}
+        </button>
+      </div>
+
+      {msg && (
+        <div style={{ padding: "10px 16px", borderRadius: 12, marginBottom: 16, fontSize: 12, display: "flex", justifyContent: "space-between", background: msg.ok ? "rgba(74,222,128,0.08)" : "rgba(232,160,184,0.08)", color: msg.ok ? "#4ade80" : "#e8a0b8", border: `1px solid ${msg.ok ? "rgba(74,222,128,0.2)" : "rgba(232,160,184,0.2)"}` }}>
+          <span>{msg.ok ? "✓" : "✗"} {msg.text}</span>
+          <button onClick={() => setMsg(null)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}>×</button>
+        </div>
+      )}
+
+      {/* KPIs */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 22 }}>
+        {[
+          { label: "CA brut encaissé", value: stats ? `${stats.ca_brut.toLocaleString("fr")} €` : null },
+          { label: "Frais SumUp", value: stats ? `− ${stats.frais.toLocaleString("fr")} €` : null, c: "#e8a0b8" },
+          { label: "CA net", value: stats ? `${stats.ca_net.toLocaleString("fr")} €` : null, c: "#4ade80" },
+          { label: "Nb de ventes", value: stats?.nb_ventes },
+        ].map((k, i) => (
+          <div key={i} className="kpi">
+            <div style={{ fontSize: 10, color: "rgba(223,207,196,0.35)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>{k.label}</div>
+            {isLoading ? <Skeleton h={26} w="60%" /> : <div style={{ fontSize: 24, fontFamily: "'Raleway', sans-serif", fontWeight: 700, color: k.c || C.gold }}>{k.value ?? "—"}</div>}
+          </div>
+        ))}
+      </div>
+
+      {/* Liste des ventes */}
+      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "150px 1.6fr 100px 90px 110px 110px", gap: 8, padding: "12px 18px", background: "rgba(0,0,0,0.2)", borderBottom: "1px solid rgba(193,138,74,0.1)" }}>
+          {["Date", "Produits", "Montant", "Frais", "Type", "Stock"].map(h => (
+            <div key={h} style={{ fontSize: 10, color: "rgba(223,207,196,0.3)", fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase" }}>{h}</div>
+          ))}
+        </div>
+        {isLoading
+          ? [1,2,3].map(i => <div key={i} style={{ padding: "14px 18px" }}><Skeleton h={18} /></div>)
+          : ventes.length === 0
+            ? <div style={{ padding: 40, textAlign: "center", fontSize: 13, color: "rgba(223,207,196,0.3)" }}>
+                Aucune vente importée sur la période — cliquez sur « Synchroniser maintenant »
+              </div>
+            : ventes.map(v => {
+              const rembourse = ["REFUNDED","CHARGEBACK","CANCELLED","FAILED"].includes(v.statut);
+              return (
+                <div key={v.id} style={{ display: "grid", gridTemplateColumns: "150px 1.6fr 100px 90px 110px 110px", gap: 8, alignItems: "center", padding: "12px 18px", borderBottom: "1px solid rgba(223,207,196,0.05)", opacity: rembourse ? 0.45 : 1 }}>
+                  <div style={{ fontSize: 11, color: "rgba(223,207,196,0.5)" }}>
+                    {v.date_transaction ? new Date(v.date_transaction).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
+                  </div>
+                  <div style={{ fontSize: 12 }}>
+                    {(v.produits || []).length > 0
+                      ? v.produits.map((p, i) => <span key={i}>{i > 0 && " · "}{p.name}{p.quantity > 1 ? ` ×${p.quantity}` : ""}</span>)
+                      : <span style={{ color: "rgba(223,207,196,0.3)" }}>Montant libre (sans article)</span>}
+                    {rembourse && <span style={{ marginLeft: 8, fontSize: 10, color: "#e8a0b8", fontWeight: 600 }}>REMBOURSÉE</span>}
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.gold }}>{v.montant.toFixed(2)} €</div>
+                  <div style={{ fontSize: 11, color: "rgba(223,207,196,0.4)" }}>{v.frais ? `−${v.frais.toFixed(2)} €` : "—"}</div>
+                  <div style={{ fontSize: 11, color: "rgba(223,207,196,0.5)" }}>{v.payment_type || "—"}{v.entry_mode ? ` · ${v.entry_mode}` : ""}</div>
+                  <div>
+                    {v.stock_traite
+                      ? <span style={{ fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 20, background: "rgba(74,222,128,0.1)", color: "#4ade80" }} title={(v.stock_details || []).map(d => d.kg ? `${d.origine} −${d.kg}kg` : "").join(" · ")}>✓ déduit</span>
+                      : <span style={{ fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 20, background: "rgba(223,207,196,0.06)", color: "rgba(223,207,196,0.35)" }} title="Nommez vos articles SumUp comme vos origines ERP avec le poids (ex : Moka Bio 250g)">non lié</span>}
+                  </div>
+                </div>
+              );
+            })
+        }
+      </div>
+      <div style={{ fontSize: 11, color: "rgba(223,207,196,0.3)", marginTop: 12, lineHeight: 1.7 }}>
+        💡 Pour que le stock se déduise automatiquement, vendez via le <b>catalogue d'articles</b> dans l'app SumUp
+        et nommez vos articles comme vos origines ERP en incluant le poids — ex : « Éthiopie Yirgacheffe 250g ».
+      </div>
+    </>
   );
 }

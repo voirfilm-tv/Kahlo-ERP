@@ -88,6 +88,63 @@ async def get_transactions_recentes(limit: int = 20) -> list:
         return resp.json().get("items", [])
 
 
+async def get_merchant_code() -> str | None:
+    """Récupère le merchant_code du compte (nécessaire pour l'API v2.1)."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"{SUMUP_BASE}/me", headers=_headers(), timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        return (data.get("merchant_profile") or {}).get("merchant_code")
+
+
+async def lister_transactions(oldest_time: str | None = None, limit: int = 100, max_pages: int = 20) -> list:
+    """Liste l'historique des transactions (API v2.1, paginée).
+
+    Retourne les items bruts SumUp : transaction_code, amount, currency,
+    status, payment_type, entry_mode, timestamp, products, fee_amount...
+    """
+    merchant_code = await get_merchant_code()
+    if not merchant_code:
+        return []
+
+    base_url = f"https://api.sumup.com/v2.1/merchants/{merchant_code}/transactions/history"
+    params = {"limit": limit, "order": "ascending"}
+    if oldest_time:
+        params["oldest_time"] = oldest_time
+
+    items: list = []
+    async with httpx.AsyncClient() as client:
+        url, query = base_url, params
+        for _ in range(max_pages):
+            resp = await client.get(url, params=query, headers=_headers(), timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            items.extend(data.get("items", []))
+
+            # Pagination hypermedia : suivre le lien rel=next
+            next_link = next((l for l in data.get("links", []) if l.get("rel") == "next"), None)
+            if not next_link or not next_link.get("href"):
+                break
+            href = next_link["href"]
+            url = href if href.startswith("http") else f"{base_url}?{href.split('?', 1)[-1]}"
+            query = None
+    return items
+
+
+async def get_transaction_detail(transaction_code: str) -> dict:
+    """Détail complet d'une transaction (produits, frais, événements)."""
+    merchant_code = await get_merchant_code()
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"https://api.sumup.com/v2.1/merchants/{merchant_code}/transactions",
+            params={"transaction_code": transaction_code},
+            headers=_headers(),
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
 async def verifier_connexion() -> bool:
     """Vérifie que la clé API SumUp est valide"""
     try:

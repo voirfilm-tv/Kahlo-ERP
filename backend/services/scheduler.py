@@ -53,6 +53,16 @@ def start_scheduler():
         replace_existing=True,
     )
 
+    # Sync des ventes SumUp toutes les 15 minutes (stock temps réel)
+    scheduler.add_job(
+        sync_ventes_sumup,
+        "interval",
+        minutes=15,
+        id="sync_sumup",
+        name="Import ventes SumUp",
+        replace_existing=True,
+    )
+
     # Sync CalDAV toutes les 30 minutes
     scheduler.add_job(
         sync_caldav,
@@ -194,6 +204,27 @@ async def prevision_semaine():
             )
         )
         # TODO: générer rapport IA + envoyer par email
+
+
+async def sync_ventes_sumup():
+    """Importe les nouvelles ventes SumUp (terminal + en ligne) et met à
+    jour le stock. Ne fait rien si la clé API n'est pas configurée —
+    testée à chaque exécution pour suivre la config à chaud."""
+    import os
+    if not os.getenv("SUMUP_API_KEY"):
+        return
+
+    from database import AsyncSessionLocal
+    from services.ventes_sumup import synchroniser
+
+    try:
+        async with AsyncSessionLocal() as db:
+            resultat = await synchroniser(db)
+            if resultat.get("importees"):
+                logger.info("SumUp: %s vente(s) importée(s), %s stock(s) mis à jour",
+                            resultat["importees"], resultat["stock_maj"])
+    except Exception as e:
+        logger.error("Erreur sync_ventes_sumup (API indisponible ?): %s", e)
 
 
 async def sync_caldav():

@@ -280,6 +280,19 @@ export const supprimerScenarioPrix = (id) =>
   api.delete(`/investissements/scenarios/${id}`).then((r) => r.data);
 
 // ────────────────────────────────────────────────────────────
+//  SUMUP — VENTES RÉELLES
+// ────────────────────────────────────────────────────────────
+
+export const getStatutSumUp = () =>
+  api.get("/sumup/statut").then((r) => r.data);
+
+export const syncVentesSumUp = (joursHistorique) =>
+  api.post("/sumup/sync", joursHistorique ? { jours_historique: joursHistorique } : {}).then((r) => r.data);
+
+export const getVentesSumUp = (params = {}) =>
+  api.get("/sumup/ventes", { params }).then((r) => r.data);
+
+// ────────────────────────────────────────────────────────────
 //  PARAMÈTRES
 // ────────────────────────────────────────────────────────────
 

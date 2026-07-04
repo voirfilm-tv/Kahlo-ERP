@@ -203,8 +203,13 @@ function SectionSumup({ cfg, set }) {
       </div>
       <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 12, padding: 16, marginBottom: 22, fontSize: 12, color: "rgba(223,207,196,0.5)", lineHeight: 1.8 }}>
         SumUp gère les paiements par carte (terminal physique sur le stand) et les checkouts en ligne (lien de paiement envoyé au client). À chaque paiement confirmé, l'ERP reçoit un webhook : le stock se décrémente, la commande change de statut, et le client est notifié.
+        <br /><br />
+        Avec la clé API, l'ERP <b style={{ color: C.creme }}>importe aussi automatiquement toutes vos ventes</b> (toutes les 15 min) :
+        CA réel, frais SumUp et déduction du stock — visible dans <b style={{ color: C.gold }}>Analytics → 💳 SumUp</b>.
+        Pour la déduction automatique du stock, nommez vos articles du catalogue SumUp comme vos origines ERP,
+        poids inclus (ex : « Éthiopie Yirgacheffe 250g »).
         <br />
-        <a href="https://developer.sumup.com" target="_blank" rel="noopener" style={{ color: C.gold }}>→ Créer une application sur developer.sumup.com</a>
+        <a href="https://developer.sumup.com" target="_blank" rel="noopener" style={{ color: C.gold }}>→ Créer une clé API sur developer.sumup.com (Dashboard → API keys)</a>
       </div>
       <Field label="Mode" hint="Sandbox pour tester, Live pour les vraies transactions sur le stand">
         <div style={{ display: "flex", gap: 10 }}>
