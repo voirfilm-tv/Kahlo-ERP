@@ -19,7 +19,7 @@ from sqlalchemy import text
 from routers import (
     auth, stock, fournisseurs, clients, commandes,
     marches, calendrier, analytics, webhooks, ia, parametres,
-    utilisateurs, system_update, investissements, sync
+    utilisateurs, system_update, investissements, sync, sumup_sync
 )
 from services.scheduler import start_scheduler
 import logging
@@ -169,6 +169,7 @@ app.include_router(utilisateurs.router, prefix="/api/utilisateurs", tags=["Utili
 app.include_router(system_update.router, prefix="/api/system-update", tags=["Mise à jour"])
 app.include_router(investissements.router, prefix="/api/investissements", tags=["Investissements"])
 app.include_router(sync.router,         prefix="/api/sync",         tags=["Sync offline"])
+app.include_router(sumup_sync.router,   prefix="/api/sumup",        tags=["SumUp ventes"])
 
 
 # Global exception handler — empêche les stack traces en production

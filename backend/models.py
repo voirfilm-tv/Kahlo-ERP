@@ -417,6 +417,38 @@ class ScenarioPrix(Base):
 
 
 # ============================================================
+#  VENTES SUMUP (transactions importées via l'API)
+#  Alimente les stats de CA réel, les frais SumUp et le
+#  décrément automatique du stock pour les ventes terminal.
+# ============================================================
+
+class TransactionSumUp(Base):
+    __tablename__ = "transactions_sumup"
+    __table_args__ = (
+        Index("idx_tx_sumup_date", "date_transaction"),
+        Index("idx_tx_sumup_statut", "statut"),
+    )
+
+    id               = Column(Integer, primary_key=True)
+    transaction_code = Column(String(100), unique=True, nullable=False)
+    montant          = Column(Float, nullable=False, default=0.0)
+    devise           = Column(String(10), default="EUR")
+    frais            = Column(Float, default=0.0)          # commission SumUp
+    statut           = Column(String(50))                  # SUCCESSFUL, REFUNDED, FAILED...
+    payment_type     = Column(String(50))                  # POS, ECOM, RECURRING...
+    entry_mode       = Column(String(50))                  # chip, contactless, ecom...
+    produits         = Column(JSON, default=list)          # [{name, quantity, price}]
+    date_transaction = Column(DateTime)
+    stock_traite     = Column(Boolean, default=False)      # décrément stock effectué
+    stock_details    = Column(JSON, default=list)          # correspondances produit → lot
+    created_at       = Column(DateTime, server_default=func.now())
+
+    @property
+    def montant_net(self):
+        return (self.montant or 0) - (self.frais or 0)
+
+
+# ============================================================
 #  CALENDRIER (événements génériques)
 # ============================================================
 
