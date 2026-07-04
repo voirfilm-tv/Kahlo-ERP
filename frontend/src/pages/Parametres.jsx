@@ -183,15 +183,17 @@ function SectionGeneral({ cfg, set }) {
 function SectionSumup({ cfg, set }) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [testMsg, setTestMsg] = useState("");
   const testConnection = async () => {
     setTesting(true);
     setTestResult(null);
-    await new Promise(r => setTimeout(r, 1200));
     try {
-      await testerConnexionSumUp();
+      // Teste la clé saisie dans le champ (pas besoin d'enregistrer d'abord)
+      await testerConnexionSumUp(cfg.api_key);
       setTestResult("ok");
-    } catch {
+    } catch (e) {
       setTestResult("error");
+      setTestMsg(extractError(e, "Clé refusée par SumUp"));
     }
     setTesting(false);
   };
@@ -199,7 +201,7 @@ function SectionSumup({ cfg, set }) {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <SectionTitle>Connexion SumUp</SectionTitle>
-        <StatusBadge ok={cfg.api_key.startsWith("sup_sk_")} />
+        <StatusBadge ok={!!cfg.configure || testResult === "ok"} labelOk="Connecté" />
       </div>
       <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 12, padding: 16, marginBottom: 22, fontSize: 12, color: "rgba(223,207,196,0.5)", lineHeight: 1.8 }}>
         SumUp gère les paiements par carte (terminal physique sur le stand) et les checkouts en ligne (lien de paiement envoyé au client). À chaque paiement confirmé, l'ERP reçoit un webhook : le stock se décrémente, la commande change de statut, et le client est notifié.
@@ -232,41 +234,28 @@ function SectionSumup({ cfg, set }) {
       <Field label="Email marchand SumUp" hint="L'adresse email de votre compte SumUp — utilisée pour les checkouts">
         <Input value={cfg.merchant_email} onChange={v => set("merchant_email", v)} placeholder="bonjour@kahlocafe.fr" />
       </Field>
-      <Field label="Webhook Secret" hint="Généré dans votre dashboard SumUp → Webhooks. Valide la signature des événements entrants.">
-        <Input value={cfg.webhook_secret} onChange={v => set("webhook_secret", v)} placeholder="••••••••" type="password" monospace />
-      </Field>
-      <Field label="URL du webhook à configurer dans SumUp" hint="À renseigner dans developer.sumup.com → votre application → Webhooks">
-        <div style={{ display: "flex", gap: 8 }}>
-          <div style={{ flex: 1, background: "rgba(0,0,0,0.3)", border: `1px solid rgba(193,138,74,0.15)`, borderRadius: 10, padding: "10px 14px", fontFamily: "monospace", fontSize: 12, color: "rgba(223,207,196,0.5)" }}>
-            https://votre-domaine/api/webhooks/sumup
-          </div>
-          <button onClick={() => navigator.clipboard.writeText("https://votre-domaine/api/webhooks/sumup")} style={{ background: "rgba(193,138,74,0.08)", border: `1px solid rgba(193,138,74,0.2)`, borderRadius: 10, padding: "0 16px", color: C.gold, cursor: "pointer", fontSize: 12, fontFamily: "'Outfit', sans-serif", fontWeight: 600 }}>
-            Copier
-          </button>
-        </div>
-      </Field>
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 24 }}>
-        <button onClick={testConnection} disabled={testing} style={{ background: `linear-gradient(135deg, ${C.prune}, ${C.gold})`, border: "none", borderRadius: 10, padding: "10px 20px", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Outfit', sans-serif" }}>
+        <button onClick={testConnection} disabled={testing || !cfg.api_key || cfg.api_key === "••••••••"} style={{ background: `linear-gradient(135deg, ${C.prune}, ${C.gold})`, border: "none", borderRadius: 10, padding: "10px 20px", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Outfit', sans-serif", opacity: testing ? 0.6 : 1 }}>
           {testing ? "Test en cours..." : "⚡ Tester la connexion"}
         </button>
-        {testResult === "ok" && <span style={{ fontSize: 12, color: C.green }}>✓ Connexion SumUp OK</span>}
-        {testResult === "error" && <span style={{ fontSize: 12, color: C.red }}>✗ Clé invalide — format attendu : sup_sk_...</span>}
+        {testResult === "ok" && <span style={{ fontSize: 12, color: C.green }}>✓ Connexion SumUp vérifiée — pensez à Enregistrer</span>}
+        {testResult === "error" && <span style={{ fontSize: 12, color: C.red }}>✗ {testMsg}</span>}
       </div>
-      <SectionTitle>Événements Webhook à activer dans SumUp</SectionTitle>
-      <div style={{ fontSize: 11, color: "rgba(223,207,196,0.35)", marginBottom: 12 }}>
-        Dans developer.sumup.com → votre application → Webhooks → Activer ces événements :
+      <SectionTitle>Confirmation instantanée des paiements en ligne</SectionTitle>
+      <div style={{ fontSize: 11, color: "rgba(223,207,196,0.35)", marginBottom: 12, lineHeight: 1.8 }}>
+        Optionnel. SumUp notifie l'ERP dès qu'un lien de paiement est réglé — il lui faut pour ça une adresse
+        publique en HTTPS. <b>Sans URL publique (ex : ERP sur le réseau local), la synchronisation automatique
+        (toutes les 15 min) confirme les paiements à sa place</b> — rien d'autre à configurer.
       </div>
-      {["PAYMENT_STATUS_CHANGED", "transaction.successful", "transaction.failed"].map(ev => (
-        <div key={ev} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <span style={{ color: C.green, fontSize: 12 }}>✓</span>
-          <span style={{ fontFamily: "monospace", fontSize: 12, color: "rgba(223,207,196,0.6)" }}>{ev}</span>
-        </div>
-      ))}
+      <Field label="URL publique de l'ERP" hint="Ex : https://erp.mondomaine.fr (via Nginx Proxy Manager). Laissez vide si l'ERP n'est accessible qu'en local.">
+        <Input value={cfg.public_url} onChange={v => set("public_url", v)} placeholder="https://erp.mondomaine.fr" monospace />
+      </Field>
       <div style={{ marginTop: 20, padding: 16, background: "rgba(0,0,0,0.2)", borderRadius: 12 }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: C.gold, marginBottom: 8 }}>Comment ça fonctionne</div>
         <div style={{ fontSize: 12, color: "rgba(223,207,196,0.5)", lineHeight: 1.8 }}>
-          <b style={{ color: C.creme }}>Terminal sur le stand :</b> chaque vente carte génère automatiquement un webhook → stock décrémenté en temps réel.<br />
-          <b style={{ color: C.creme }}>Commandes à l'avance :</b> un lien de paiement SumUp Checkout est envoyé au client par Brevo → paiement confirmé → commande activée.
+          <b style={{ color: C.creme }}>Terminal sur le stand :</b> les ventes sont importées automatiquement toutes les 15 min (CA réel, frais, stock) — visible dans Analytics → 💳 SumUp.<br />
+          <b style={{ color: C.creme }}>Commandes à l'avance :</b> un lien de paiement SumUp est créé depuis la commande → une fois payé, la commande passe payée et le stock se déduit (instantané avec URL publique, sinon au prochain cycle de sync).<br />
+          <b style={{ color: C.creme }}>Sécurité :</b> chaque notification de paiement est re-vérifiée auprès de l'API SumUp avant d'être acceptée.
         </div>
       </div>
     </div>
@@ -279,7 +268,8 @@ function SectionBrevo({ cfg, set }) {
     setTesting(true);
     setTestResult(null);
     try {
-      await testerConnexionBrevo();
+      // Teste la clé saisie dans le champ (pas besoin d'enregistrer d'abord)
+      await testerConnexionBrevo(cfg.api_key);
       setTestResult("ok");
     } catch {
       setTestResult("error");
@@ -410,9 +400,9 @@ function SectionIA({ cfg, set }) {
   const testConnection = async () => {
     setTesting(true);
     setTestResult(null);
-    await new Promise(r => setTimeout(r, 900));
     try {
-      await testerConnexionGemini();
+      // Teste la clé et le modèle saisis dans le formulaire
+      await testerConnexionGemini(cfg.api_key, cfg.model);
       setTestResult("ok");
     } catch {
       setTestResult("error");
@@ -1089,7 +1079,7 @@ function SectionMiseAJour() {
 // ============================================================
 const DEFAULT_STATE = {
   general: { nom: "Kahlo Café", ville: "Lyon, France", email: "bonjour@kahlocafe.fr", tel: "", objectif_ca: "3500", devise: "EUR", timezone: "Europe/Paris", format_date: "dd/MM/yyyy" },
-  sumup: { api_key: "", merchant_email: "", webhook_secret: "", mode: "sandbox" },
+  sumup: { api_key: "", merchant_email: "", webhook_secret: "", mode: "sandbox", public_url: "", configure: false },
   brevo: { api_key: "", from_email: "bonjour@kahlocafe.fr", from_name: "Kahlo Café", tpl_anniversaire: "", tpl_confirmation: "", tpl_prete: "", tpl_relance: "", liste_clients: "", liste_vip: "", liste_relance: "", envoi_anniversaire: true, envoi_relance: true, envoi_confirmation: true, envoi_prete: true },
   calendrier: { caldav_user: "kahlo", caldav_password: "", caldav_interval: "30", google_client_id: "", google_client_secret: "", sync_marches: true, sync_commandes: true, sync_fournisseurs: false },
   ia: { api_key: "", model: "gemini-1.5-flash", analyse_marche: true, suggestion_stock: true, fiche_produit: true, analyse_dashboard: false },

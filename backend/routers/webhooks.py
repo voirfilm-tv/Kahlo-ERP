@@ -1,7 +1,14 @@
 """
-KAHLO CAFÉ — SumUp Webhooks
-Traitement des événements SumUp en temps réel
-Doc : https://developer.sumup.com/api/webhooks
+KAHLO CAFÉ — Callbacks SumUp
+SumUp notifie les changements de statut d'un checkout via le return_url
+transmis à la création du checkout (pas de webhook global côté dashboard).
+
+Sécurité : le corps du POST n'est JAMAIS considéré comme fiable — on ne
+lit que l'identifiant du checkout, puis on re-vérifie son statut réel
+auprès de l'API SumUp avant de marquer la commande payée. Un attaquant
+qui poste un faux événement ne peut donc rien déclencher.
+Compat : si SUMUP_WEBHOOK_SECRET est configuré, la signature HMAC
+x-sumup-signature est en plus exigée.
 """
 
 from fastapi import APIRouter, Request, HTTPException, Header, Depends
@@ -15,13 +22,15 @@ import os
 import logging
 
 from database import get_db
-from models import Commande, Lot, StatutCommande
+from models import Commande
 from services.stock import decrementer_stock
 from services.brevo import notifier_client_paiement_recu
 from services.calendrier import creer_evenement_remise
+from services.sumup import get_checkout
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
 
 def _webhook_secret() -> str:
     # Lu à chaque appel : configurable à chaud via la page Paramètres
@@ -29,7 +38,7 @@ def _webhook_secret() -> str:
 
 
 def _verifier_signature(payload: bytes, signature: str) -> bool:
-    """SumUp signe les webhooks avec HMAC-SHA256."""
+    """Signature HMAC-SHA256 optionnelle (défense en profondeur)."""
     secret = _webhook_secret()
     if not secret or not signature:
         return False
@@ -46,57 +55,66 @@ async def sumup_webhook(
 ):
     payload = await request.body()
 
-    # Bloquer si le secret webhook n'est pas configuré (évite le contournement)
-    if not _webhook_secret():
-        logger.error("SUMUP_WEBHOOK_SECRET non configure — webhook rejete")
-        raise HTTPException(status_code=403, detail="Webhook non configure")
-
-    if not _verifier_signature(payload, x_sumup_signature or ""):
+    # Signature exigée seulement si un secret est configuré (optionnel :
+    # la sécurité réelle vient de la re-vérification API ci-dessous)
+    if _webhook_secret() and not _verifier_signature(payload, x_sumup_signature or ""):
         raise HTTPException(status_code=400, detail="Signature invalide")
 
     try:
         event = json.loads(payload)
     except (json.JSONDecodeError, ValueError):
         raise HTTPException(status_code=400, detail="Corps JSON invalide")
-    event_type = event.get("event_type") or event.get("type")
-    logger.info(f"SumUp webhook reçu: {event_type}")
 
-    if event_type == "PAYMENT_STATUS_CHANGED":
-        transaction = event.get("payload", {})
-        statut = transaction.get("status")
-        checkout_id = transaction.get("checkout_id") or transaction.get("id")
+    # Formats possibles : {id, status...} ou {event_type, payload: {...}}
+    body = event.get("payload") if isinstance(event.get("payload"), dict) else event
+    checkout_id = body.get("checkout_id") or body.get("id")
+    logger.info("Callback SumUp reçu pour checkout %s", checkout_id)
 
-        if statut == "SUCCESSFUL":
-            await handle_paiement_reussi(checkout_id, transaction, db)
-        elif statut == "FAILED":
-            logger.warning(f"Paiement SumUp échoué: {checkout_id}")
-        elif statut in ("REFUNDED", "CANCELLED"):
-            await handle_remboursement(checkout_id, db)
+    if not checkout_id:
+        return {"received": True}
 
-    elif event_type == "transaction.successful":
-        await handle_vente_terminal(event.get("payload", {}), db)
+    # La commande doit exister chez nous — sinon rien à faire
+    result = await db.execute(
+        select(Commande)
+        .options(selectinload(Commande.lignes), selectinload(Commande.client), selectinload(Commande.marche))
+        .where(Commande.sumup_checkout_id == str(checkout_id))
+    )
+    commande = result.scalar_one_or_none()
+    if not commande:
+        logger.warning("Commande introuvable pour SumUp checkout: %s", checkout_id)
+        return {"received": True}
+
+    # ⚠ Ne jamais faire confiance au statut du POST : re-vérifier via l'API
+    try:
+        checkout = await get_checkout(str(checkout_id))
+    except Exception:
+        logger.exception("Impossible de vérifier le checkout %s auprès de SumUp", checkout_id)
+        return {"received": True, "verified": False}
+
+    statut = (checkout.get("status") or "").upper()
+
+    if statut == "PAID":
+        await _traiter_paiement_confirme(commande, checkout, db)
+    else:
+        logger.info("Checkout %s en statut %s — aucune action", checkout_id, statut)
 
     return {"received": True}
 
 
-async def handle_paiement_reussi(checkout_id: str, transaction: dict, db: AsyncSession):
-    result = await db.execute(
-        select(Commande)
-        .options(selectinload(Commande.lignes), selectinload(Commande.client), selectinload(Commande.marche))
-        .where(Commande.sumup_checkout_id == checkout_id)
-    )
-    commande = result.scalar_one_or_none()
-    if not commande:
-        logger.warning(f"Commande introuvable pour SumUp checkout: {checkout_id}")
-        return
-
+async def _traiter_paiement_confirme(commande: Commande, checkout: dict, db: AsyncSession):
+    """Marque la commande payée, décrémente le stock, notifie le client."""
     # Idempotence : si déjà traité, ignorer
     if commande.sumup_paid:
-        logger.info(f"Webhook déjà traité pour commande {commande.numero}, ignoré")
+        logger.info("Paiement déjà traité pour la commande %s, ignoré", commande.numero)
         return
 
     commande.sumup_paid = True
-    commande.sumup_transaction_code = transaction.get("transaction_code", "")
+    transactions = checkout.get("transactions") or []
+    commande.sumup_transaction_code = (
+        checkout.get("transaction_code")
+        or (transactions[0].get("transaction_code") if transactions else "")
+        or ""
+    )
 
     for ligne in commande.lignes:
         await decrementer_stock(db, ligne.lot_id, ligne.poids_g / 1000)
@@ -110,34 +128,5 @@ async def handle_paiement_reussi(checkout_id: str, transaction: dict, db: AsyncS
     try:
         await notifier_client_paiement_recu(commande)
     except Exception:
-        logger.exception(f"Erreur notification après paiement commande {commande.numero}")
-    logger.info(f"Commande {commande.numero} payée via SumUp")
-
-
-async def handle_remboursement(checkout_id: str, db: AsyncSession):
-    result = await db.execute(
-        select(Commande)
-        .options(selectinload(Commande.lignes))
-        .where(Commande.sumup_checkout_id == checkout_id)
-    )
-    commande = result.scalar_one_or_none()
-    if not commande:
-        return
-    commande.statut = StatutCommande.annulee
-    # Recréditer le stock
-    for ligne in commande.lignes:
-        lot_result = await db.execute(
-            select(Lot).where(Lot.id == ligne.lot_id)
-        )
-        lot = lot_result.scalar_one_or_none()
-        if lot:
-            lot.stock_kg = (lot.stock_kg or 0) + (ligne.poids_g / 1000)
-    await db.commit()
-    logger.info(f"Commande {commande.numero} remboursée")
-
-
-async def handle_vente_terminal(transaction: dict, db: AsyncSession):
-    """Vente directe terminal SumUp sur le stand."""
-    montant = transaction.get("amount", 0)
-    code = transaction.get("transaction_code", "")
-    logger.info(f"Vente terminal SumUp: {montant}€ [{code}]")
+        logger.exception("Erreur notification après paiement commande %s", commande.numero)
+    logger.info("Commande %s payée via SumUp (vérifié API)", commande.numero)

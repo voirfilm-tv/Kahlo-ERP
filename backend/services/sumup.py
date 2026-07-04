@@ -12,10 +12,11 @@ logger = logging.getLogger(__name__)
 
 SUMUP_BASE = "https://api.sumup.com/v0.1"
 
-def _headers():
-    # Clé lue à chaque appel : configurable à chaud via la page Paramètres
+def _headers(api_key: str | None = None):
+    # Clé lue à chaque appel : configurable à chaud via la page Paramètres.
+    # api_key permet de tester une clé saisie avant enregistrement.
     return {
-        "Authorization": f"Bearer {os.getenv('SUMUP_API_KEY', '')}",
+        "Authorization": f"Bearer {api_key or os.getenv('SUMUP_API_KEY', '')}",
         "Content-Type": "application/json",
     }
 
@@ -34,6 +35,12 @@ async def creer_checkout(commande_id: int, montant: float, description: str, ema
     }
     if email_client:
         payload["customer_email"] = email_client
+
+    # SumUp notifie les changements de statut par checkout via return_url
+    # (pas de webhook global côté dashboard). Nécessite une URL publique.
+    base_publique = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if base_publique:
+        payload["return_url"] = f"{base_publique}/api/webhooks/sumup"
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -145,14 +152,14 @@ async def get_transaction_detail(transaction_code: str) -> dict:
         return resp.json()
 
 
-async def verifier_connexion() -> bool:
-    """Vérifie que la clé API SumUp est valide"""
+async def verifier_connexion(api_key: str | None = None) -> bool:
+    """Vérifie qu'une clé API SumUp est valide (celle fournie, sinon la configurée)."""
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 f"{SUMUP_BASE}/me",
-                headers=_headers(),
-                timeout=5,
+                headers=_headers(api_key),
+                timeout=8,
             )
             return resp.status_code == 200
     except Exception:
