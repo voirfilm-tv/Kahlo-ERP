@@ -8,8 +8,20 @@ import google.generativeai as genai
 import os
 import json
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel("gemini-1.5-flash")
+
+class _LazyModel:
+    """Proxy paresseux : clé API et modèle lus à chaque appel, pour que la
+    configuration saisie dans la page Paramètres s'applique sans redémarrage."""
+
+    def _resolve(self):
+        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+        return genai.GenerativeModel(os.getenv("GEMINI_MODEL", "gemini-1.5-flash"))
+
+    def __getattr__(self, name):
+        return getattr(self._resolve(), name)
+
+
+model = _LazyModel()
 
 
 # ============================================================

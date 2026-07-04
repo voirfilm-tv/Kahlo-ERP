@@ -93,6 +93,7 @@ services:
       ADMIN_FORCE_RESET: ${ADMIN_FORCE_RESET:-false}
       SESSION_HOURS: ${SESSION_HOURS:-8}
       COOKIE_SECURE: ${COOKIE_SECURE:-auto}
+      ENV_FILE_PATH: /app/data/config.env
       CORS_ORIGINS: ${CORS_ORIGINS:-https://erp.kahlocafe.fr}
       BREVO_FROM_EMAIL: ${BREVO_FROM_EMAIL:-bonjour@kahlocafe.fr}
       BREVO_FROM_NAME: ${BREVO_FROM_NAME:-Kahlo Café}
@@ -113,6 +114,7 @@ services:
       - uploads_data:/app/uploads
       - factures_data:/app/factures
       - backups_data:/backups/kahlo
+      - config_data:/app/data
     expose:
       - "8000"
     healthcheck:
@@ -197,6 +199,7 @@ services:
 
 volumes:
   postgres_data:
+  config_data:
   redis_data:
   caldav_data:
   uploads_data:

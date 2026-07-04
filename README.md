@@ -281,12 +281,12 @@ cd /DATA/AppData
 curl -L https://github.com/voirfilm-tv/Kahlo-ERP/archive/refs/heads/main.tar.gz | tar xz
 mv Kahlo-ERP-main kahlo-erp && cd kahlo-erp
 
-# 2. Configurer les secrets
+# 2. Configurer les secrets d'infrastructure (une seule fois)
 cp .env.example .env
-nano .env   # changez POSTGRES_PASSWORD, REDIS_PASSWORD, SECRET_KEY,
-            # APP_DEFAULT_PASSWORD et CALDAV_PASSWORD
-            # + COOKIE_SECURE=false si vous accédez en HTTP (pas de HTTPS) :
-            # sans ça le navigateur rejette les cookies et le login boucle
+nano .env   # changez POSTGRES_PASSWORD, REDIS_PASSWORD, SECRET_KEY
+            # et APP_DEFAULT_PASSWORD — tout le reste (clés API, emails,
+            # cookies, CORS...) se règle ensuite dans l'interface
+            # Paramètres, sans jamais retoucher ce fichier
 
 # 3. Lancer la stack (publie l'ERP sur le port 8087 de la machine)
 docker compose -f docker-compose.yml -f docker-compose.selfhost.yml up -d --build
@@ -294,7 +294,9 @@ docker compose -f docker-compose.yml -f docker-compose.selfhost.yml up -d --buil
 
 L'ERP est accessible sur `http://IP-du-NAS:8087` (port modifiable via `KAHLO_HTTP_PORT` dans le `.env`). Connexion initiale : `APP_USERNAME` / `APP_DEFAULT_PASSWORD` du `.env`.
 
-Pour un accès HTTPS avec votre domaine, créez un proxy host dans Nginx Proxy Manager vers `IP-du-NAS:8087`, ajoutez le domaine dans `CORS_ORIGINS` et repassez `COOKIE_SECURE=auto`. Mise à jour : re-télécharger les sources puis relancer la commande du point 3.
+L'accès en HTTP local fonctionne directement — les cookies suivent automatiquement le protocole de la requête. Pour un accès HTTPS avec votre domaine, créez un proxy host dans Nginx Proxy Manager vers `IP-du-NAS:8087` et ajoutez le domaine dans Paramètres → Sécurité → Origines autorisées (CORS).
+
+La configuration saisie dans l'interface Paramètres est stockée sur le volume `config_data` : elle est appliquée immédiatement, prime sur le `.env` et survit aux mises à jour. Mise à jour de l'app : re-télécharger les sources puis relancer la commande du point 3.
 
 Si le mot de passe ne fonctionne pas alors que le `.env` est correct : l'admin a probablement été créé lors d'un premier démarrage avec l'ancienne valeur. Mettez `ADMIN_FORCE_RESET=true` dans le `.env`, relancez le backend (`docker compose up -d backend`), reconnectez-vous, puis repassez la variable à `false`.
 

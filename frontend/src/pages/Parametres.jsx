@@ -462,6 +462,17 @@ function SectionSecurite({ cfg, set }) {
           {pwdMsg && <span style={{ fontSize: 12, color: pwdMsg.ok ? C.green : C.red }}>{pwdMsg.ok ? "✓" : "✗"} {pwdMsg.text}</span>}
         </div>
       </div>
+      <SectionTitle>Accès & cookies</SectionTitle>
+      <Field label="Cookies sécurisés (HTTPS)" hint="« Auto » les active dès qu'une clé secrète de production est configurée. Choisissez « Désactivés » uniquement si vous accédez à l'ERP en HTTP sur votre réseau local (ex: http://IP:8087 sur un NAS) — sinon la connexion boucle sur la page de login. Appliqué immédiatement.">
+        <select value={cfg.cookie_secure || "auto"} onChange={e => set("cookie_secure", e.target.value)} style={{ background: "rgba(0,0,0,0.3)", border: `1px solid rgba(193,138,74,0.15)`, borderRadius: 10, padding: "10px 14px", color: C.creme, width: "100%", fontFamily: "'Outfit', sans-serif", fontSize: 13, outline: "none" }}>
+          <option value="auto">Auto (recommandé) — sécurisés dès que l'ERP est en production</option>
+          <option value="false">Désactivés — accès HTTP local (NAS/ZimaOS sans HTTPS)</option>
+          <option value="true">Toujours activés — HTTPS obligatoire</option>
+        </select>
+      </Field>
+      <Field label="Origines autorisées (CORS)" hint="Adresses web autorisées à appeler l'API, séparées par des virgules. Inutile de la modifier si vous accédez à l'ERP par son adresse directe. Appliqué au prochain redémarrage.">
+        <Input value={cfg.cors_origins || ""} onChange={v => set("cors_origins", v)} placeholder="https://erp.mondomaine.fr" monospace />
+      </Field>
       <SectionTitle>Sessions</SectionTitle>
       <Toggle value={cfg.session_longue} onChange={v => set("session_longue", v)} label="Sessions longues (30 jours)" sub="Désactiver pour des sessions de 8h seulement" />
       <SectionTitle style={{ marginTop: 28 }}>Clé secrète JWT</SectionTitle>
@@ -998,7 +1009,7 @@ const DEFAULT_STATE = {
   ia: { api_key: "", model: "gemini-1.5-flash", analyse_marche: true, suggestion_stock: true, fiche_produit: true, analyse_dashboard: false },
   stock: { seuil_alerte: "3", alerte_dlc_jours: "30", lot_vieux_jours: "90", fifo_auto: true, alerte_rupture: true, bon_commande_auto: false, qte_min_reappro: "5" },
   crm: { tampons_max: "10", recompense_label: "1 café offert (250g au choix)", inactivite_jours: "45", anniv_jours_avant: "14", vip_ca_seuil: "200", vip_auto: true },
-  securite: { username: "kahlo", new_password: "", confirm_password: "", secret_key: "••••••••••••••••••••••", session_longue: true },
+  securite: { username: "kahlo", new_password: "", confirm_password: "", secret_key: "••••••••••••••••••••••", session_longue: true, cookie_secure: "auto", cors_origins: "" },
   sauvegarde: { backup_auto: true, backup_freq: "daily", backup_retention: "30", backup_path: "/backups/kahlo" },
 };
 export default function KahloParametres() {
@@ -1118,7 +1129,7 @@ export default function KahloParametres() {
                 {SECTIONS.find(s => s.id === active)?.icon} {SECTIONS.find(s => s.id === active)?.label}
               </h1>
               <p style={{ color: "rgba(223,207,196,0.35)", fontSize: 12, marginTop: 4 }}>
-                Configuration Kahlo Café ERP
+                Tout se configure ici — aucun fichier à éditer. Enregistré sur le serveur, appliqué immédiatement et conservé après redémarrage.
               </p>
             </div>
             {isLoading && <span style={{ fontSize: 12, color: "rgba(223,207,196,0.4)" }}>Chargement...</span>}

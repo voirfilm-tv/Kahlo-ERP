@@ -10,12 +10,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-SUMUP_API_KEY = os.getenv("SUMUP_API_KEY", "")
 SUMUP_BASE = "https://api.sumup.com/v0.1"
 
 def _headers():
+    # Clé lue à chaque appel : configurable à chaud via la page Paramètres
     return {
-        "Authorization": f"Bearer {SUMUP_API_KEY}",
+        "Authorization": f"Bearer {os.getenv('SUMUP_API_KEY', '')}",
         "Content-Type": "application/json",
     }
 

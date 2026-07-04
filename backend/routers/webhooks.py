@@ -23,15 +23,18 @@ from services.calendrier import creer_evenement_remise
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-SUMUP_WEBHOOK_SECRET = os.getenv("SUMUP_WEBHOOK_SECRET", "")
+def _webhook_secret() -> str:
+    # Lu à chaque appel : configurable à chaud via la page Paramètres
+    return os.getenv("SUMUP_WEBHOOK_SECRET", "")
 
 
 def _verifier_signature(payload: bytes, signature: str) -> bool:
     """SumUp signe les webhooks avec HMAC-SHA256."""
-    if not SUMUP_WEBHOOK_SECRET or not signature:
+    secret = _webhook_secret()
+    if not secret or not signature:
         return False
     sig = signature.replace("sha256=", "")
-    expected = hmac.new(SUMUP_WEBHOOK_SECRET.encode(), payload, hashlib.sha256).hexdigest()
+    expected = hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, sig)
 
 
@@ -44,7 +47,7 @@ async def sumup_webhook(
     payload = await request.body()
 
     # Bloquer si le secret webhook n'est pas configuré (évite le contournement)
-    if not SUMUP_WEBHOOK_SECRET:
+    if not _webhook_secret():
         logger.error("SUMUP_WEBHOOK_SECRET non configure — webhook rejete")
         raise HTTPException(status_code=403, detail="Webhook non configure")
 
